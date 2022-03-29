@@ -136,7 +136,7 @@ func initKey(pubDirectory string) {
 func makeAtServerHandler(serverChannel chan string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		utils.Info.Printf("atServer:url=%s", req.URL.Path)
-		if req.URL.Path != "/atserver" {
+		if req.URL.Path != "/ats" {
 			http.Error(w, "404 url path not found.", 404)
 		} else if req.Method != "POST" {
 			http.Error(w, "400 bad request method.", 400)
@@ -162,9 +162,9 @@ func makeAtServerHandler(serverChannel chan string) func(http.ResponseWriter, *h
 }
 
 func initAtServer(serverChannel chan string, muxServer *http.ServeMux) {
-	utils.Info.Printf("initAtServer(): :8600/atserver")
+	utils.Info.Printf("initAtServer(): :8600/ats")
 	atServerHandler := makeAtServerHandler(serverChannel)
-	muxServer.HandleFunc("/atserver", atServerHandler)
+	muxServer.HandleFunc("/ats", atServerHandler)
 	utils.Error.Fatal(http.ListenAndServe(":8600", muxServer))
 }
 
@@ -468,7 +468,10 @@ func getActorRole(actorIndex int, context string) string {
 // }
 
 func checkVin(vin string) bool {
-	return true // should be checked with VIN in tree
+	if (len(vin) == 0) {
+	    return true  // this can only happen if AG token does not contain VIN, which is OK according to spec
+	}
+	return true // TODO:should be checked with VIN in tree
 }
 
 func validatePop(payload AtGenPayload) (bool, string) {

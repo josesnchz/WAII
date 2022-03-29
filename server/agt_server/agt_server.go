@@ -42,7 +42,7 @@ var jtiCache map[string]string // Contains a cache of the jwt that has been mana
 func makeAgtServerHandler(serverChannel chan string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		utils.Info.Printf("agtServer:url=%s", req.URL.Path)
-		if req.URL.Path != "/agtserver" {
+		if req.URL.Path != "/agts" {
 			http.Error(w, "404 url path not found.", 404)
 		} else if req.Method != "POST" {
 			http.Error(w, "400 bad request method.", 400)
@@ -74,9 +74,9 @@ func makeAgtServerHandler(serverChannel chan string) func(http.ResponseWriter, *
 }
 
 func initAgtServer(serverChannel chan string, muxServer *http.ServeMux) {
-	utils.Info.Printf("initAtServer(): :7500/agtserver")
+	utils.Info.Printf("initAtServer(): :7500/agts")
 	agtServerHandler := makeAgtServerHandler(serverChannel)
-	muxServer.HandleFunc("/agtserver", agtServerHandler) // Only one url is supported: "/agtserver"
+	muxServer.HandleFunc("/agts", agtServerHandler)
 	utils.Error.Fatal(http.ListenAndServe(":7500", muxServer))
 }
 

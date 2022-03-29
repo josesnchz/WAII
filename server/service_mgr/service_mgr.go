@@ -28,6 +28,7 @@ import (
 	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/go-redis/redis"
 )
 
 // one muxServer component for service registration, one for the data communication
@@ -71,7 +72,8 @@ var errorResponseMap = map[string]interface{}{
 
 var db *sql.DB
 var dbErr error
-var isStateStorage = false
+var redisClient *redis.Client
+var stateDbType string
 
 var dummyValue int // dummy value returned when nothing better is available. Counts from 0 to 999, wrap around, updated every 50 msec
 
@@ -188,7 +190,7 @@ func activateInterval(subscriptionChannel chan int, subscriptionId int, interval
 		utils.Error.Printf("activateInterval: No available ticker.")
 		return
 	}
-	subscriptionTicker[index] = time.NewTicker(time.Duration(interval) * 1000 * time.Millisecond) // interval in seconds
+	subscriptionTicker[index] = time.NewTicker(time.Duration(interval) * time.Millisecond) // interval in milliseconds
 	go func() {
 		for range subscriptionTicker[index].C {
 			subscriptionChannel <- subscriptionId
@@ -234,19 +236,19 @@ func setSubscriptionListThreads(subscriptionList []SubscriptionState, subThreads
 	return subscriptionList
 }
 
-func checkRangeChangeFilter(filterList []utils.FilterObject, latestDataPoint string, currentDataPoint string) bool {
+func checkRangeChangeFilter(filterList []utils.FilterObject, latestDataPoint string, currentDataPoint string) (bool, bool) {
 	for i := 0; i < len(filterList); i++ {
 		if filterList[i].Type == "paths" || filterList[i].Type == "timebased" || filterList[i].Type == "curvelog" {
 			continue
 		}
 		if filterList[i].Type == "range" {
-			return evaluateRangeFilter(filterList[i].Value, getDPValue(currentDataPoint))
+			return evaluateRangeFilter(filterList[i].Value, getDPValue(currentDataPoint)), false   // do not update latestValue
 		}
 		if filterList[i].Type == "change" {
 			return evaluateChangeFilter(filterList[i].Value, getDPValue(latestDataPoint), getDPValue(currentDataPoint))
 		}
 	}
-	return false
+	return false, false
 }
 
 func getDPValue(dp string) string {
@@ -275,30 +277,31 @@ func unpackDataPoint(dp string) (string, string) { // {"value":"Y", "ts":"Z"}
 
 func evaluateRangeFilter(opValue string, currentValue string) bool {
 	//utils.Info.Printf("evaluateRangeFilter: opValue=%s", opValue)
-	type ChangeFilter struct {
+	type RangeFilter struct {
 		LogicOp  string `json:"logic-op"`
 		Boundary string `json:"boundary"`
 	}
-	var changeFilter []ChangeFilter
+	var rangeFilter []RangeFilter
 	var err error
 	if strings.Contains(opValue, "[") == false {
-		changeFilter = make([]ChangeFilter, 1)
-		err = json.Unmarshal([]byte(opValue), &(changeFilter[0]))
+		rangeFilter = make([]RangeFilter, 1)
+		err = json.Unmarshal([]byte(opValue), &(rangeFilter[0]))
 	} else {
-		err = json.Unmarshal([]byte(opValue), &changeFilter)
+		err = json.Unmarshal([]byte(opValue), &rangeFilter)
 	}
 	if err != nil {
 		utils.Error.Printf("evaluateRangeFilter: Unmarshal error=%s", err)
 		return false
 	}
 	evaluation := true
-	for i := 0; i < len(changeFilter); i++ {
-		evaluation = evaluation && compareValues(changeFilter[i].LogicOp, changeFilter[i].Boundary, currentValue, "0") // currVal - 0 logic-op boundary
+	for i := 0; i < len(rangeFilter); i++ {
+		eval,_ := compareValues(rangeFilter[i].LogicOp, rangeFilter[i].Boundary, currentValue, "0") // currVal - 0 logic-op boundary
+		evaluation = evaluation && eval
 	}
 	return evaluation
 }
 
-func evaluateChangeFilter(opValue string, latestValue string, currentValue string) bool {
+func evaluateChangeFilter(opValue string, latestValue string, currentValue string) (bool, bool) {
 	//utils.Info.Printf("evaluateChangeFilter: opValue=%s", opValue)
 	type ChangeFilter struct {
 		LogicOp string `json:"logic-op"`
@@ -308,92 +311,99 @@ func evaluateChangeFilter(opValue string, latestValue string, currentValue strin
 	err := json.Unmarshal([]byte(opValue), &changeFilter)
 	if err != nil {
 		utils.Error.Printf("evaluateChangeFilter: Unmarshal error=%s", err)
-		return false
+		return false, false
 	}
 	return compareValues(changeFilter.LogicOp, latestValue, currentValue, changeFilter.Diff)
 }
 
-func compareValues(logicOp string, latestValue string, currentValue string, diff string) bool {
-	if utils.AnalyzeValueType(latestValue) != utils.AnalyzeValueType(currentValue) {
+func compareValues(logicOp string, latestValue string, currentValue string, diff string) (bool, bool) {
+	latestValueType := utils.AnalyzeValueType(latestValue)
+	if latestValueType != utils.AnalyzeValueType(currentValue) {
 		utils.Error.Printf("compareValues: Incompatible types, latVal=%s, curVal=%s", latestValue, currentValue)
-		return false
+		return false, false
 	}
-	switch utils.AnalyzeValueType(latestValue) {
+	switch latestValueType {
 	case 0:
 		fallthrough // string
 	case 2: // bool
-		//utils.Info.Printf("compareValues: value type=bool OR string")
+		if diff != "0" {
+		    utils.Error.Printf("compareValues: invalid parameter for boolean type")
+		    return false, false
+		}
 		switch logicOp {
 		case "eq":
-			return currentValue == latestValue
+			return currentValue == latestValue, true
 		case "ne":
-			return currentValue != latestValue
+			return currentValue != latestValue, true  // true->false OR false->true
+		case "gt":
+			return latestValue == "false" && currentValue != latestValue, true  // false->true
+		case "lt":
+			return latestValue == "true" && currentValue != latestValue, true  // true->false
 		}
-		return false
+		return false, false
 	case 1: // int
-		//utils.Info.Printf("compareValues: value type=integer, cv=%s, lv=%s, diff=%s", currentValue, latestValue, diff)
 		curVal, err := strconv.Atoi(currentValue)
 		if err != nil {
-			return false
+			return false, false
 		}
 		latVal, err := strconv.Atoi(latestValue)
 		if err != nil {
-			return false
+			return false, false
 		}
 		diffVal, err := strconv.Atoi(diff)
 		if err != nil {
-			return false
+			return false, false
 		}
 		//utils.Info.Printf("compareValues: value type=integer, cv=%d, lv=%d, diff=%d, logicOp=%s", curVal, latVal, diffVal, logicOp)
 		switch logicOp {
 		case "eq":
-			return curVal-diffVal == latVal
+			return curVal-diffVal == latVal, false
 		case "ne":
-			return curVal-diffVal != latVal
+			return curVal-diffVal != latVal, false
 		case "gt":
-			return curVal-diffVal > latVal
+			return curVal-diffVal > latVal, false
 		case "gte":
-			return curVal-diffVal >= latVal
+			return curVal-diffVal >= latVal, false
 		case "lt":
-			return curVal-diffVal < latVal
+			return curVal-diffVal < latVal, false
 		case "lte":
-			return curVal-diffVal <= latVal
+			return curVal-diffVal <= latVal, false
 		}
-		return false
+		return false, false
 	case 3: // float
-		//utils.Info.Printf("compareValues: value type=float")
 		f64Val, err := strconv.ParseFloat(currentValue, 32)
 		if err != nil {
-			return false
+			return false, false
 		}
 		curVal := float32(f64Val)
 		f64Val, err = strconv.ParseFloat(latestValue, 32)
 		if err != nil {
-			return false
+			return false, false
 		}
 		latVal := float32(f64Val)
 		f64Val, err = strconv.ParseFloat(diff, 32)
 		if err != nil {
-			return false
+			return false, false
 		}
 		diffVal := float32(f64Val)
+		//utils.Info.Printf("compareValues: value type=float, cv=%d, lv=%d, diff=%d, logicOp=%s", curVal, latVal, diffVal, logicOp)
 		switch logicOp {
 		case "eq":
-			return curVal-diffVal == latVal
+			return curVal-diffVal == latVal, false
 		case "ne":
-			return curVal-diffVal != latVal
+			return curVal-diffVal != latVal, false
 		case "gt":
-			return curVal-diffVal > latVal
+			return curVal-diffVal > latVal, false
 		case "gte":
-			return curVal-diffVal >= latVal
+			return curVal-diffVal >= latVal, false
 		case "lt":
-			return curVal-diffVal < latVal
+			return curVal-diffVal < latVal, false
 		case "lte":
-			return curVal-diffVal <= latVal
+			return curVal-diffVal <= latVal, false
 		}
-		return false
+		return false, false
 	}
-	return false
+	return false, false
 }
 
 func addPackage(incompleteMessage string, packName string, packValue string) string {
@@ -425,7 +435,10 @@ func checkSubscription(subscriptionChannel chan int, CLChan chan CLPack, backend
 		// check if range or change notification triggered
 		for i := range subscriptionList {
 			triggerDataPoint := getVehicleData(subscriptionList[i].path[0])
-			doTrigger := checkRangeChangeFilter(subscriptionList[i].filterList, subscriptionList[i].latestDataPoint, triggerDataPoint)
+			doTrigger, updateLatest := checkRangeChangeFilter(subscriptionList[i].filterList, subscriptionList[i].latestDataPoint, triggerDataPoint)
+			if updateLatest == true {
+			    subscriptionList[i].latestDataPoint = triggerDataPoint
+			}
 			if doTrigger == true {
 				subscriptionState := subscriptionList[i]
 				subscriptionMap["subscriptionId"] = strconv.Itoa(subscriptionState.subscriptionId)
@@ -533,8 +546,10 @@ func activateIfIntervalOrCL(filterList []utils.FilterObject, subscriptionChan ch
 }
 
 func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
-	if isStateStorage == true {
-		rows, err := db.Query("SELECT `value`, `timestamp` FROM VSS_MAP WHERE `path`=?", path)
+	switch stateDbType {
+	    case "sqlite":
+	    
+		rows, err := db.Query("SELECT `c_value`, `c_ts` FROM VSS_MAP WHERE `path`=?", path)
 		if err != nil {
 			return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
 		}
@@ -545,30 +560,72 @@ func getVehicleData(path string) string { // returns {"value":"Y", "ts":"Z"}
 		rows.Next()
 		err = rows.Scan(&value, &timestamp)
 		if err != nil {
-			return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
+			utils.Warning.Printf("Data not found.\n")
+//			return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
+			return ""
 		}
 		return `{"value":"` + value + `", "ts":"` + timestamp + `"}`
-	} else {
+	    case "redis":
+		dp, err := redisClient.Get(path).Result()
+		if err != nil {
+		    if err.Error() != "redis: nil" {
+			utils.Error.Printf("Job failed. Error()=%s\n", err.Error())
+			return ""
+		    } else {
+			utils.Warning.Printf("Data not found.\n")
+//			return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
+			return ""
+		    }
+		} else {
+//		    utils.Info.Printf("Datapoint=%s\n", dp)
+		    type RedisDp struct {
+			Val string
+			Ts string
+		    }
+		    var currentDp RedisDp
+		    err := json.Unmarshal([]byte(dp), &currentDp)
+		    if err != nil {
+			utils.Error.Printf("Unmarshal failed for signal entry=%s, error=%s", string(dp), err)
+			return ""
+		    } else {
+//			utils.Info.Printf("Data: val=%s, ts=%s\n", currentDp.Val, currentDp.Ts)
+			return `{"value":"` + currentDp.Val + `", "ts":"` + currentDp.Ts + `"}`
+		    }
+		}
+	    case "none":
 		return `{"value":"` + strconv.Itoa(dummyValue) + `", "ts":"` + utils.GetRfcTime() + `"}`
 	}
+	return ""
 }
 
 func setVehicleData(path string, value string) string {
-	if isStateStorage == true {
-		stmt, err := db.Prepare("UPDATE VSS_MAP SET value=?, timestamp=? WHERE `path`=?")
+	ts := utils.GetRfcTime()
+	switch stateDbType {
+	    case "sqlite":
+		stmt, err := db.Prepare("UPDATE VSS_MAP SET d_value=?, d_ts=? WHERE `path`=?")
 		if err != nil {
 			utils.Error.Printf("Could not prepare for statestorage updating, err = %s", err)
 			return ""
 		}
 		defer stmt.Close()
 
-		ts := utils.GetRfcTime()
 		_, err = stmt.Exec(value, ts, path[1:len(path)-1]) // remove quotes surrounding path
 		if err != nil {
 			utils.Error.Printf("Could not update statestorage, err = %s", err)
 			return ""
 		}
 		return ts
+	    case "redis":
+		dp := `{"val":"` + value + `", "ts":"` + ts + `"}`
+		dPath := path + ".D"  // path to "desired" dp. Must be created identically by feeder reading it.
+		err := redisClient.Set(dPath, dp, time.Duration(0)).Err()
+		if err != nil {
+		    utils.Error.Printf("Could not update statestorage. Err=%s\n",err)
+		    return ""
+		} else {
+//		    utils.Error.Println("Datapoint=%s\n", dp)
+		    return ts
+		}
 	}
 	return ""
 }
@@ -912,6 +969,8 @@ func getValidation(path string) string {
 func main() {
 	// Create new parser object
 	parser := argparse.NewParser("print", "Service Manager service")
+	stateDB := parser.Selector("s", "statestorage", []string{"sqlite", "redis", "none"}, &argparse.Options{Required: false, 
+	                        Help: "Statestorage must be either sqlite, redis, or none", Default:"sqlite"})
 	// Create string flag
 	logFile := parser.Flag("", "logfile", &argparse.Options{Required: false, Help: "outputs to logfile in ./logs folder"})
 	logLevel := parser.Selector("", "loglevel", []string{"trace", "debug", "info", "warn", "error", "fatal", "panic"}, &argparse.Options{
@@ -921,7 +980,7 @@ func main() {
 	udsPath := parser.String("", "uds", &argparse.Options{
 		Required: false,
 		Help:     "Set UDS path and file",
-		Default:  "/tmp/vissv2/histctrlserver.sock"})
+		Default:  "/var/tmp/vissv2/histctrlserver.sock"})
 	dbFile := parser.String("", "dbfile", &argparse.Options{
 		Required: false,
 		Help:     "statestorage database filename",
@@ -933,18 +992,35 @@ func main() {
 		fmt.Print(parser.Usage(err))
 	}
 
-	//os.Remove("/tmp/vissv2/histctrlserver.sock")
+	stateDbType = *stateDB
+
+	//os.Remove("/var/tmp/vissv2/histctrlserver.sock")
 	//listExists := createHistoryList("../vsspathlist.json") // file is created by core-server at startup
 
 	utils.InitLog("service-mgr-log.txt", "./logs", *logFile, *logLevel)
-	if utils.FileExists(*dbFile) {
-		db, dbErr = sql.Open("sqlite3", *dbFile)
-		if dbErr != nil {
+	switch stateDbType {
+	    case "sqlite":
+		if utils.FileExists(*dbFile) {
+		    db, dbErr = sql.Open("sqlite3", *dbFile)
+		    if dbErr != nil {
 			utils.Error.Printf("Could not open DB file = %s, err = %s", *dbFile, dbErr)
 			os.Exit(1)
+		    }
+		    defer db.Close()
 		}
-		defer db.Close()
-		isStateStorage = true
+	    case "redis":
+		redisClient = redis.NewClient(&redis.Options{
+		    Network:  "unix",
+		    Addr:     "/var/tmp/vissv2/redisDB.sock",
+		    Password: "",
+		    DB:       1,
+		})
+		err := redisClient.Ping().Err()
+		if err != nil {
+			utils.Error.Printf("Could not initialise redis DB, err = %s", err)
+			os.Exit(1)
+		}
+	    default:
 	}
 
 	var regResponse utils.SvcRegResponse
