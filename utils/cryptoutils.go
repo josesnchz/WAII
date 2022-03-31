@@ -14,7 +14,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -28,6 +27,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Gets rsa key in pem format and decodes it into rsa.privatekey
@@ -474,8 +475,11 @@ func (popToken PopToken) GenerateToken(privKey crypto.PrivateKey) (token string,
 	iat := int((time.Now().Unix()))
 	popToken.PayloadClaims["iat"] = strconv.Itoa(iat)
 	popToken.PayloadClaims["exp"] = strconv.Itoa(iat + 30)
-	md5Hash := md5.Sum([]byte(popToken.Jwk.Thumb + strconv.Itoa(iat)))
-	popToken.PayloadClaims["jti"] = string(base64.RawURLEncoding.EncodeToString(md5Hash[:]))
+	unparsedId, err := uuid.NewRandom()
+	if err != nil { // Better way to generate uuid than calling an ext program
+		return
+	}
+	popToken.PayloadClaims["jti"] = unparsedId.String()
 	// Marshal header (must be in order)
 	iterator := []string{"typ", "alg", "jwk"}
 	for _, iter := range iterator {

@@ -24,6 +24,7 @@ import (
 
 	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/google/uuid"
 )
 
 const lt_duration = 4 * 60 * 60 // 4 hours
@@ -190,21 +191,20 @@ func generateLTAgt(payload Payload, pop string) string {
 	}
 	// Generates the response token
 	var jwtoken utils.JsonWebToken
-	uuid, err := exec.Command("uuidgen").Output()
-	if err != nil {
+	var unparsedId uuid.UUID
+	if unparsedId, err = uuid.NewRandom(); err != nil { // Better way to generate uuid than calling an ext program
 		utils.Error.Printf("generateAgt:Error generating uuid, err=%s", err)
 		return `{"error": "Internal error"}`
 	}
-	uuid = uuid[:len(uuid)-1] // remove '\n' char
 	iat := int(time.Now().Unix())
 	exp := iat + lt_duration // defined by const
 	jwtoken.SetHeader("RS256")
-	jwtoken.AddClaim("vin", payload.Vin)
+	jwtoken.AddClaim("vin", payload.Vin) // No need to check if it is filled, if not, it does nothing (new imp makes this claim not mandatory)
 	jwtoken.AddClaim("iat", strconv.Itoa(iat))
 	jwtoken.AddClaim("exp", strconv.Itoa(exp))
 	jwtoken.AddClaim("clx", payload.Context)
 	jwtoken.AddClaim("aud", "w3org/gen2")
-	jwtoken.AddClaim("jti", string(uuid))
+	jwtoken.AddClaim("jti", unparsedId.String())
 	jwtoken.AddClaim("pub", payload.Key)
 	//utils.Info.Printf("generateAgt:jwtHeader=%s", jwtoken.GetHeader())
 	//utils.Info.Printf("generateAgt:jwtPayload=%s", jwtoken.GetPayload())

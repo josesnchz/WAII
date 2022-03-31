@@ -22,16 +22,15 @@ import (
 	"github.com/MEAE-GOT/WAII/utils"
 )
 
+const AGT_URL = "http://127.0.0.1:7500/agts"
+const AT_URL = "http://127.0.0.1:8600/ats"
+const VISS_GET_URL = "http://127.0.0.1:8888/" //....
 /*
-const AGT_URL = "http://127.0.0.1:7500/agtserver"
-const AT_URL = "http://127.0.0.1:8600/atserver"
-const VISS_POST_URL = "http://127.0.0.1:8888/"//....
-*/
 const AGT_URL = "http://150.214.47.151:61057/agts"
 const AT_URL = "http://150.214.47.151:61061/ats"
 const VISS_GET_URL = "http://150.214.47.151:61063/Vehicle/Cabin/Door/Row1/Right/IsOpen" //...
 const VISS_WS_URL = "150.214.24.151:61059/VISSv2"
-
+*/
 type StringMap map[string]string
 type TokenMap map[string]*utils.ExtendedJwt
 

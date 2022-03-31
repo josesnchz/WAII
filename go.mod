@@ -17,9 +17,10 @@ require (
 	github.com/COVESA/vss-tools/binary/go_parser/parserlib v0.0.0-20220104185813-cad8492de65f
 	github.com/akamensky/argparse v1.3.1
 	github.com/eclipse/paho.mqtt.golang v1.3.5
-	github.com/go-redis/redis v6.15.9+incompatible // indirect
-	github.com/go-redis/redis/v8 v8.11.5 // indirect
+	github.com/go-redis/redis v6.15.9+incompatible
+	github.com/go-redis/redis/v8 v8.11.5
 	github.com/golang/protobuf v1.5.2
+	github.com/google/uuid v1.1.2
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.4.2
 	github.com/mattn/go-sqlite3 v1.14.9

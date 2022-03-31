@@ -15,7 +15,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/google/uuid"
 )
 
 // #include <stdlib.h>
@@ -468,8 +468,8 @@ func getActorRole(actorIndex int, context string) string {
 // }
 
 func checkVin(vin string) bool {
-	if (len(vin) == 0) {
-	    return true  // this can only happen if AG token does not contain VIN, which is OK according to spec
+	if len(vin) == 0 {
+		return true // this can only happen if AG token does not contain VIN, which is OK according to spec
 	}
 	return true // TODO:should be checked with VIN in tree
 }
@@ -542,12 +542,11 @@ func validateRequest(payload AtGenPayload) (bool, string) {
 }
 
 func generateAt(payload AtGenPayload) string {
-	uuid, err := exec.Command("uuidgen").Output()
-	if err != nil {
+	unparsedId, err := uuid.NewRandom()
+	if err != nil { // Better way to generate uuid than calling an ext program
 		utils.Error.Printf("generateAgt:Error generating uuid, err=%s", err)
 		return `{"error": "Internal error"}`
 	}
-	uuid = uuid[:len(uuid)-1] // remove '\n' char
 	iat := int(time.Now().Unix())
 	exp := iat + 1*60*60 // 1 hour
 	var jwtoken utils.JsonWebToken
@@ -558,7 +557,7 @@ func generateAt(payload AtGenPayload) string {
 	jwtoken.AddClaim("pur", payload.Purpose)
 	jwtoken.AddClaim("clx", payload.Agt.PayloadClaims["clx"])
 	jwtoken.AddClaim("aud", "w3org/gen2")
-	jwtoken.AddClaim("jti", string(uuid))
+	jwtoken.AddClaim("jti", unparsedId.String())
 	utils.Info.Printf("generateAt:jwtHeader=%s", jwtoken.GetHeader())
 	utils.Info.Printf("generateAt:jwtPayload=%s", jwtoken.GetPayload())
 	jwtoken.Encode()
