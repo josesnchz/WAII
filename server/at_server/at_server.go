@@ -15,7 +15,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/google/uuid"
 )
 
 // #include <stdlib.h>
@@ -36,6 +36,13 @@ var VSSTreeRoot C.long
 
 // set to MAXFOUNDNODES in cparserlib.h
 const MAXFOUNDNODES = 1500
+
+// Used for clock unsync tolerance
+const GAP = 3
+const LIFETIME = 5
+
+// Stores a cache of the jwt ids received to not be reused
+var jtiCache map[string]struct{}
 
 type searchData_t struct { // searchData_t defined in cparserlib.h
 	path            [512]byte // cparserlib.h: #define MAXCHARSPATH 512; typedef char path_t[MAXCHARSPATH];
@@ -136,7 +143,7 @@ func initKey(pubDirectory string) {
 func makeAtServerHandler(serverChannel chan string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		utils.Info.Printf("atServer:url=%s", req.URL.Path)
-		if req.URL.Path != "/atserver" {
+		if req.URL.Path != "/ats" {
 			http.Error(w, "404 url path not found.", 404)
 		} else if req.Method != "POST" {
 			http.Error(w, "400 bad request method.", 400)
@@ -162,9 +169,9 @@ func makeAtServerHandler(serverChannel chan string) func(http.ResponseWriter, *h
 }
 
 func initAtServer(serverChannel chan string, muxServer *http.ServeMux) {
-	utils.Info.Printf("initAtServer(): :8600/atserver")
+	utils.Info.Printf("initAtServer(): :8600/ats")
 	atServerHandler := makeAtServerHandler(serverChannel)
-	muxServer.HandleFunc("/atserver", atServerHandler)
+	muxServer.HandleFunc("/ats", atServerHandler)
 	utils.Error.Fatal(http.ListenAndServe(":8600", muxServer))
 }
 
@@ -468,22 +475,48 @@ func getActorRole(actorIndex int, context string) string {
 // }
 
 func checkVin(vin string) bool {
-	return true // should be checked with VIN in tree
+	if len(vin) == 0 {
+		return true // this can only happen if AG token does not contain VIN, which is OK according to spec
+	}
+	return true // TODO:should be checked with VIN in tree
+}
+
+func deleteJti(jti string) {
+	time.Sleep((GAP + LIFETIME + 5) * time.Second)
+	delete(jtiCache, jti)
+}
+
+// Checks if jwt id exist in cache, if it does, return false. If not, it adds it and automatically clear it from cache when it expires
+func addCheckJti(jti string) bool {
+	if jtiCache == nil { // If map is empty (first time), it doesnt even check, initializes and add
+		jtiCache = make(map[string]struct{})
+		jtiCache[jti] = struct{}{}
+		go deleteJti(jti)
+		return true
+	}
+	if _, ok := jtiCache[jti]; ok { // Check if jti exist in cache
+		return false
+	}
+	// If we get here, it does not exist in cache
+	jtiCache[jti] = struct{}{}
+	go deleteJti(jti)
+	return true
 }
 
 func validatePop(payload AtGenPayload) (bool, string) {
+	// Check jti
+	if !addCheckJti(payload.PopTk.PayloadClaims["jti"]) {
+		utils.Error.Printf("validateRequest: JTI used")
+		return false, `{"error": "Repeated JTI"}`
+	}
 	// Check signaure
 	if err := payload.PopTk.CheckSignature(); err != nil {
 		utils.Info.Printf("validateRequest: Invalid POP signature: %s", err)
 		return false, `{"error": "Cannot validate POP signature"}`
 	}
-	// Check exp
-	if ok, cause := payload.PopTk.CheckExp(); !ok {
-		utils.Info.Printf("validateRequest: Invalid POP exp: %s", cause)
-		return false, `{"error": "Cannot validate POP exp"}`
-	}
+	// Check exp: no need, iat will be used instead
 	// Check iat
-	if ok, cause := payload.PopTk.CheckIat(-1); !ok {
+	if ok, cause := payload.PopTk.CheckIat(GAP, LIFETIME); !ok {
 		utils.Info.Printf("validateRequest: Invalid POP iat: %s", cause)
 		return false, `{"error": "Cannot validate POP iat"}`
 	}
@@ -493,7 +526,7 @@ func validatePop(payload AtGenPayload) (bool, string) {
 		return false, `{"error": "Keys in POP and AGToken are not matching"}`
 	}
 	// Check aud
-	if ok, _ := payload.PopTk.CheckAud("vissv2/at"); !ok {
+	if ok, _ := payload.PopTk.CheckAud("vissv2/ats"); !ok {
 		utils.Info.Printf("validateRequest: Aud in POP not valid")
 		return false, `{"error": "Invalid aud"}`
 	}
@@ -539,12 +572,11 @@ func validateRequest(payload AtGenPayload) (bool, string) {
 }
 
 func generateAt(payload AtGenPayload) string {
-	uuid, err := exec.Command("uuidgen").Output()
-	if err != nil {
+	unparsedId, err := uuid.NewRandom()
+	if err != nil { // Better way to generate uuid than calling an ext program
 		utils.Error.Printf("generateAgt:Error generating uuid, err=%s", err)
 		return `{"error": "Internal error"}`
 	}
-	uuid = uuid[:len(uuid)-1] // remove '\n' char
 	iat := int(time.Now().Unix())
 	exp := iat + 1*60*60 // 1 hour
 	var jwtoken utils.JsonWebToken
@@ -555,7 +587,7 @@ func generateAt(payload AtGenPayload) string {
 	jwtoken.AddClaim("pur", payload.Purpose)
 	jwtoken.AddClaim("clx", payload.Agt.PayloadClaims["clx"])
 	jwtoken.AddClaim("aud", "w3org/gen2")
-	jwtoken.AddClaim("jti", string(uuid))
+	jwtoken.AddClaim("jti", unparsedId.String())
 	utils.Info.Printf("generateAt:jwtHeader=%s", jwtoken.GetHeader())
 	utils.Info.Printf("generateAt:jwtPayload=%s", jwtoken.GetPayload())
 	jwtoken.Encode()

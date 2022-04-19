@@ -14,7 +14,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -28,6 +27,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Gets rsa key in pem format and decodes it into rsa.privatekey
@@ -473,9 +474,13 @@ func (popToken PopToken) GenerateToken(privKey crypto.PrivateKey) (token string,
 	// New payload claims: iat + jti
 	iat := int((time.Now().Unix()))
 	popToken.PayloadClaims["iat"] = strconv.Itoa(iat)
-	popToken.PayloadClaims["exp"] = strconv.Itoa(iat + 30)
-	md5Hash := md5.Sum([]byte(popToken.Jwk.Thumb + strconv.Itoa(iat)))
-	popToken.PayloadClaims["jti"] = string(base64.RawURLEncoding.EncodeToString(md5Hash[:]))
+	//No need to use exp, servers will check iat + jti to check the validity
+	//popToken.PayloadClaims["exp"] = strconv.Itoa(iat + 30)
+	unparsedId, err := uuid.NewRandom()
+	if err != nil { // Better way to generate uuid than calling an ext program
+		return
+	}
+	popToken.PayloadClaims["jti"] = unparsedId.String()
 	// Marshal header (must be in order)
 	iterator := []string{"typ", "alg", "jwk"}
 	for _, iter := range iterator {
@@ -589,31 +594,32 @@ func (popToken PopToken) CheckExp() (bool, string) {
 	return true, "OK"
 }
 
-// Check iats. -1 for default
-func (popToken PopToken) CheckIat(ttl int) (bool, string) {
-	if ttl == -1 {
-		ttl = 20
-	}
+// Check iats. Gap is the possible error between clocks. lifetime is the maximum time after is creation that the token can be used
+func (popToken PopToken) CheckIat(gap int, lifetime int) (bool, string) {
 	act := int(time.Now().Unix())
 	iat, err := strconv.Atoi(popToken.PayloadClaims["iat"])
 	if err != nil {
 		return false, "No iat claim"
 	}
-	if iat+ttl < act || iat-ttl > act { // 30 seconds margin for clock problems and trip
+	if iat-gap >= act { // Iat marks before the actual time
+		return false, "Bad iat"
+	}
+
+	if act > iat+lifetime+gap { // Check if token is still valid
 		return false, "Expired"
 	}
 	return true, "OK"
 }
 
 // Returns a bool that tells if the pop token is valid.
-func (popToken *PopToken) Validate(thumbprint, aud string) (valid bool, info string) {
+func (popToken *PopToken) Validate(thumbprint, aud string, gap, lifetime int) (valid bool, info string) {
 	// Validates time
-	if valid, info = popToken.CheckIat(-1); !valid {
+	if valid, info = popToken.CheckIat(gap, lifetime); !valid {
 		return
 	}
-	if valid, info = popToken.CheckExp(); !valid {
-		return
-	}
+	//if valid, info = popToken.CheckExp(); !valid {
+	//	return
+	//}
 	// Makes sure to exist claim "aud"
 	if valid, info = popToken.CheckAud(aud); !valid {
 		return
