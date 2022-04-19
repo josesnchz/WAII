@@ -782,9 +782,9 @@ func main() {
 						fmt.Println("\nNo token found.")
 					} else {
 						VissClaims.addClaim("action", "get")
-						VissClaims.addClaim("path", "Vehicle.Powertrain.FuelSystem")
-						VissClaims.addClaim("filter", `{"type":"paths","value":["Level","Range"]}`)
-						VissClaims.addClaim("requestId", "235")
+						//VissClaims.addClaim("path", "Vehicle.Powertrain.FuelSystem")
+						//VissClaims.addClaim("filter", `{"type":"paths","value":["Level","Range"]}`)
+						//VissClaims.addClaim("requestId", "235")
 						VissClaims.addClaim("authorization", token.Token.GetFullToken())
 						postContent := VissClaims.generateReq()
 						fmt.Printf("\nSending POST Request to %s: \n%s\n", VISS_GET_URL, postContent)
