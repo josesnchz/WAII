@@ -37,6 +37,13 @@ var VSSTreeRoot C.long
 // set to MAXFOUNDNODES in cparserlib.h
 const MAXFOUNDNODES = 1500
 
+// Used for clock unsync tolerance
+const GAP = 3
+const LIFETIME = 5
+
+// Stores a cache of the jwt ids received to not be reused
+var jtiCache map[string]struct{}
+
 type searchData_t struct { // searchData_t defined in cparserlib.h
 	path            [512]byte // cparserlib.h: #define MAXCHARSPATH 512; typedef char path_t[MAXCHARSPATH];
 	foundNodeHandle int64     // defined as long in cparserlib.h
@@ -474,19 +481,42 @@ func checkVin(vin string) bool {
 	return true // TODO:should be checked with VIN in tree
 }
 
+func deleteJti(jti string) {
+	time.Sleep((GAP + LIFETIME + 5) * time.Second)
+	delete(jtiCache, jti)
+}
+
+// Checks if jwt id exist in cache, if it does, return false. If not, it adds it and automatically clear it from cache when it expires
+func addCheckJti(jti string) bool {
+	if jtiCache == nil { // If map is empty (first time), it doesnt even check, initializes and add
+		jtiCache = make(map[string]struct{})
+		jtiCache[jti] = struct{}{}
+		go deleteJti(jti)
+		return true
+	}
+	if _, ok := jtiCache[jti]; ok { // Check if jti exist in cache
+		return false
+	}
+	// If we get here, it does not exist in cache
+	jtiCache[jti] = struct{}{}
+	go deleteJti(jti)
+	return true
+}
+
 func validatePop(payload AtGenPayload) (bool, string) {
+	// Check jti
+	if !addCheckJti(payload.PopTk.PayloadClaims["jti"]) {
+		utils.Error.Printf("validateRequest: JTI used")
+		return false, `{"error": "Repeated JTI"}`
+	}
 	// Check signaure
 	if err := payload.PopTk.CheckSignature(); err != nil {
 		utils.Info.Printf("validateRequest: Invalid POP signature: %s", err)
 		return false, `{"error": "Cannot validate POP signature"}`
 	}
-	// Check exp
-	if ok, cause := payload.PopTk.CheckExp(); !ok {
-		utils.Info.Printf("validateRequest: Invalid POP exp: %s", cause)
-		return false, `{"error": "Cannot validate POP exp"}`
-	}
+	// Check exp: no need, iat will be used instead
 	// Check iat
-	if ok, cause := payload.PopTk.CheckIat(-1); !ok {
+	if ok, cause := payload.PopTk.CheckIat(GAP, LIFETIME); !ok {
 		utils.Info.Printf("validateRequest: Invalid POP iat: %s", cause)
 		return false, `{"error": "Cannot validate POP iat"}`
 	}
@@ -496,7 +526,7 @@ func validatePop(payload AtGenPayload) (bool, string) {
 		return false, `{"error": "Keys in POP and AGToken are not matching"}`
 	}
 	// Check aud
-	if ok, _ := payload.PopTk.CheckAud("vissv2/at"); !ok {
+	if ok, _ := payload.PopTk.CheckAud("vissv2/ats"); !ok {
 		utils.Info.Printf("validateRequest: Aud in POP not valid")
 		return false, `{"error": "Invalid aud"}`
 	}

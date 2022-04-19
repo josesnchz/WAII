@@ -22,15 +22,16 @@ import (
 	"github.com/MEAE-GOT/WAII/utils"
 )
 
+/*
 const AGT_URL = "http://127.0.0.1:7500/agts"
 const AT_URL = "http://127.0.0.1:8600/ats"
 const VISS_GET_URL = "http://127.0.0.1:8888/" //....
-/*
-const AGT_URL = "http://150.214.47.151:61057/agts"
-const AT_URL = "http://150.214.47.151:61061/ats"
-const VISS_GET_URL = "http://150.214.47.151:61063/Vehicle/Cabin/Door/Row1/Right/IsOpen" //...
-const VISS_WS_URL = "150.214.24.151:61059/VISSv2"
 */
+const AGT_URL = "http://agt_url:61057/agts"
+const AT_URL = "http://at_url:61061/ats"
+const VISS_GET_URL = "http://viss_url:61063/Vehicle/Cabin/Door/Row1/Right/IsOpen" //...
+const VISS_WS_URL = "viss_url:61059/VISSv2"
+
 type StringMap map[string]string
 type TokenMap map[string]*utils.ExtendedJwt
 
@@ -224,11 +225,11 @@ func main() {
 	AGTClaims := make(StringMap)
 	AGTClaims.initAGTClaim()
 	AGTPOPClaims := make(StringMap)
-	AGTPOPClaims.addClaim("aud", "vissv2/Agt")
+	AGTPOPClaims.addClaim("aud", "vissv2/agts")
 	// For AT Requests
 	ATClaims := make(StringMap)
 	ATPOPClaims := make(StringMap)
-	ATPOPClaims.addClaim("aud", "vissv2/at")
+	ATPOPClaims.addClaim("aud", "vissv2/ats")
 	// For VISSV2 Requests
 	VissClaims := make(StringMap)
 	// FAST INITIALIZATION
