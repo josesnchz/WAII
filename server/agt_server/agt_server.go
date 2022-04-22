@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/w3c/automotive-viss2/utils"
 	"github.com/akamensky/argparse"
 	"github.com/google/uuid"
+	"github.com/w3c/automotive-viss2/utils"
 )
 
 const LT_DURATION = 4 * 60 * 60 // 4 hours
@@ -41,8 +41,7 @@ type Payload struct {
 	Vin     string `json:"vin"`
 	Context string `json:"context"`
 	Proof   string `json:"proof"`
-	//Key     utils.JsonWebKey `json:"key"`
-	Key string `json:"key"`
+	Key     string `json:"key"`
 }
 
 func makeAgtServerHandler(serverChannel chan string) func(http.ResponseWriter, *http.Request) {
@@ -52,7 +51,7 @@ func makeAgtServerHandler(serverChannel chan string) func(http.ResponseWriter, *
 			http.Error(w, "404 url path not found.", 404)
 		} else if req.Method != "POST" {
 			//CORS POLICY, necessary for web client
-			if req.Method == "OPTIONS"{
+			if req.Method == "OPTIONS" {
 				w.Header().Set("Access-Control-Allow-Origin", "*")
 				w.Header().Set("Access-Control-Allow-Headers", "PoP")
 				w.Header().Set("Access-Control-Allow-Methods", "POST")
