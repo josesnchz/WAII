@@ -51,7 +51,15 @@ func makeAgtServerHandler(serverChannel chan string) func(http.ResponseWriter, *
 		if req.URL.Path != "/agts" {
 			http.Error(w, "404 url path not found.", 404)
 		} else if req.Method != "POST" {
-			http.Error(w, "400 bad request method.", 400)
+			//CORS POLICY, necessary for web client
+			if req.Method == "OPTIONS"{
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+				w.Header().Set("Access-Control-Allow-Headers", "PoP")
+				w.Header().Set("Access-Control-Allow-Methods", "POST")
+				w.Header().Set("Access-Control-Max-Age", "57600")
+			} else {
+				http.Error(w, "400 bad request method.", 400)
+			}
 		} else {
 			bodyBytes, err := ioutil.ReadAll(req.Body)
 			if err != nil {
@@ -116,6 +124,7 @@ func generateResponse(input string, pop string) string {
 		return `{"error": "Client request malformed"}`
 	}
 	if authenticateClient(payload) {
+		fmt.Printf("\n\n%s\n\n", pop)
 		if pop != "" {
 			return generateLTAgt(payload, pop)
 		}
