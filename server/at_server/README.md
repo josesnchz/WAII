@@ -22,7 +22,7 @@ The POST payload shall use JSON format, and contain the following:
 {"token":"ag-token", "purpose":"fuel-status", "pop":"GHI"}
 where pop is included only if a key was present in AGT request, the token value must be replaced by the AG token, and purpose must be on the Purpose list. For more information, see the VISSv2 specification, the access control chapter in the CORE document.
 
-A client using the MQTT transport must apply the application level protocol which is described in the <a href="https://github.com/MEAE-GOT/WAII/tree/master/server/mqtt_mgr">MQTT manager directory</a>, with the difference that the ATS is subscribing to the following topic:
+A client using the MQTT transport must apply the application level protocol which is described in the <a href="https://github.com/josesnchz/WAII/tree/master/server/mqtt_mgr">MQTT manager directory</a>, with the difference that the ATS is subscribing to the following topic:
 VIN/access-control
 
 

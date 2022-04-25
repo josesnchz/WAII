@@ -3,7 +3,7 @@
 * (C) 2019 Geotab Inc
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/josesnchz/WAII
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -32,7 +32,7 @@ import (
 
 	gomodel "github.com/COVESA/vss-tools/binary/go_parser/datamodel"
 	golib "github.com/COVESA/vss-tools/binary/go_parser/parserlib"
-	"github.com/w3c/automotive-viss2/utils"
+	"github.com/josesnchz/WAII/utils"
 )
 
 /*
@@ -152,7 +152,7 @@ func backendServiceDataComm(dataConn *websocket.Conn, backendChannel []chan stri
 			utils.Error.Println("Service datachannel read error:", err)
 			response = []byte(utils.FinalizeMessage(errorResponseMap)) // needs improvement
 		}
-//utils.Info.Printf("RESPONSE=%s", string(response))
+		//utils.Info.Printf("RESPONSE=%s", string(response))
 		mgrIndex := routerTableSearchForMgrIndex(getRouterId(string(response)))
 		utils.Info.Printf("mgrIndex=%d", mgrIndex)
 		backendChannel[mgrIndex] <- string(response)
@@ -670,7 +670,7 @@ func serveRequest(request string, tDChanIndex int, sDChanIndex int) {
 func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDChanIndex int) {
 	rootPath := requestMap["path"].(string)
 	var searchPath []string
-	
+
 	if requestMap["filter"] != nil {
 		var filterList []utils.FilterObject
 		utils.UnpackFilter(requestMap["filter"], &filterList)
@@ -714,8 +714,8 @@ func issueServiceRequest(requestMap map[string]interface{}, tDChanIndex int, sDC
 				return
 			}
 			if filterList[i].Type == "dynamic-metadata" && filterList[i].Value == "server_capabilities" {
-			    serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap) // no further verification
-			    return
+				serviceDataChan[sDChanIndex] <- utils.FinalizeMessage(requestMap) // no further verification
+				return
 			}
 		}
 	}

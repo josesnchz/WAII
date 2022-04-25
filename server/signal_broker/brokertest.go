@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/josesnchz/WAII/utils"
 	log "github.com/sirupsen/logrus"
 )
 

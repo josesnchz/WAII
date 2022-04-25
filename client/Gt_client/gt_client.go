@@ -19,7 +19,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/MEAE-GOT/WAII/utils"
+	"github.com/josesnchz/WAII/utils"
 )
 
 /*

@@ -3,7 +3,7 @@
 * (C) 2019 Geotab Inc
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/w3c/automotive-viss2
+* All files and artifacts in the repository at https://github.com/josesnchz/WAII
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -21,9 +21,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/w3c/automotive-viss2/utils"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/josesnchz/WAII/utils"
 )
 
 var upgrader = websocket.Upgrader{
@@ -68,7 +68,7 @@ func (pathList *PathList) vssPathListHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	maxChars := len(bytes)
-	if (maxChars > 99) {
+	if maxChars > 99 {
 		maxChars = 99
 	}
 	utils.Info.Printf("initVssPathListServer():Response=%s...(truncated to max 100 bytes)", bytes[0:maxChars])

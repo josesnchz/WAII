@@ -1,16 +1,16 @@
-module github.com/w3c/automotive-viss2
+module github.com/josesnchz/WAII
 
 go 1.16
 
 //example on how to use replace to point to fork or local path
-//replace github.com/w3c/automotive-viss2/utils => github.com/MagnusGun/WAII/utils master
-//replace github.com/w3c/automotive-viss2/utils => ./utils
+//replace github.com/josesnchz/WAII/utils => github.com/MagnusGun/WAII/utils master
+//replace github.com/josesnchz/WAII/utils => ./utils
 //replace (
 //	github.com/COVESA/vss-tools/binary/go_parser/datamodel => /home/ulfbjorkengren/Proj/covesa/vss-tools/binary/go_parser/datamodel
 //	github.com/COVESA/vss-tools/binary/go_parser/parserlib => /home/ulfbjorkengren/Proj/covesa/vss-tools/binary/go_parser/parserlib
 //)
 
-//replace github.com/w3c/automotive-viss2/protobuf/protoc-out => ./protobuf/protoc-out
+//replace github.com/josesnchz/WAII/protobuf/protoc-out => ./protobuf/protoc-out
 
 require (
 	github.com/COVESA/vss-tools/binary/go_parser/datamodel v0.0.0-20220104185813-cad8492de65f

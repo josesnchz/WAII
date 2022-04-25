@@ -1,13 +1,14 @@
 /*
 * (C) 2021 Mitsubishi Electrics Automotive
-*/
+ */
 
 package main
 
 import (
 	"context"
 	"fmt"
-	base "github.com/MEAE-GOT/WAII/server/signal_broker/proto_files"
+
+	base "github.com/josesnchz/WAII/server/signal_broker/proto_files"
 
 	log "github.com/sirupsen/logrus"
 	"google.golang.org/grpc"

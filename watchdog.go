@@ -19,15 +19,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/gorilla/websocket"
+	"github.com/josesnchz/WAII/utils"
 )
 
-const portNum  = 8080 // WS mgr portnum
-const urlPath  = ""
-const subscribeCommand  = `{"action":"subscribe", "path":"Vehicle/Cabin/Door/Count", "filter":"$intervalEQ5", "requestId":"999"}`
-const subscribePeriod = 5  // set to value X set in "$intervalEQX" above
+const portNum = 8080 // WS mgr portnum
+const urlPath = ""
+const subscribeCommand = `{"action":"subscribe", "path":"Vehicle/Cabin/Door/Count", "filter":"$intervalEQ5", "requestId":"999"}`
+const subscribePeriod = 5 // set to value X set in "$intervalEQX" above
 
 var addr *string
 
@@ -36,170 +36,170 @@ func initSubscribeSession(addr *string) *websocket.Conn {
 	dataConn, _, err := websocket.DefaultDialer.Dial(dataSessionUrl.String(), nil)
 	if err != nil {
 		utils.Error.Fatal("Data session dial error:" + err.Error())
-	} else{
-	    err = dataConn.WriteMessage(websocket.TextMessage, []byte(subscribeCommand))
-	    if err != nil {
-		    utils.Warning.Println("Watchdog subscribe error:" + err.Error())
-                    dataConn = nil
-	    }
-        }
+	} else {
+		err = dataConn.WriteMessage(websocket.TextMessage, []byte(subscribeCommand))
+		if err != nil {
+			utils.Warning.Println("Watchdog subscribe error:" + err.Error())
+			dataConn = nil
+		}
+	}
 	return dataConn
 }
 
 func receiveSubscriptions(dataConn *websocket.Conn, triggerChannel chan string) {
-        for {
-                dataConn.SetReadDeadline(time.Now().Add(2*subscribePeriod * time.Second))
+	for {
+		dataConn.SetReadDeadline(time.Now().Add(2 * subscribePeriod * time.Second))
 		_, response, err := dataConn.ReadMessage()
 		if err != nil {
 			utils.Error.Println("Watchdog read error:", err)
 			return
 		}
-//                utils.Info.Println("Watchdog subscription received.Message=%s", response)
-                triggerChannel <- string(response)
-        }
+		//                utils.Info.Println("Watchdog subscription received.Message=%s", response)
+		triggerChannel <- string(response)
+	}
 }
 
 func executeStopme() {
-//    out, err := exec.Command("/bin/sh", "-c", "./W3CServer.sh", "stopme").CombinedOutput()
-    out, err := exec.Command("./W3CServer.sh", "stopme").CombinedOutput()
-    if err != nil {
-	utils.Error.Printf("Script execute error:%s", string(out))
-	utils.Error.Printf("Script execute error:%v", err)
-	utils.Error.Println("Script execute error command: stopme")
-    } else {
-	utils.Info.Println("Script stopme executed successfully.")
-        time.Sleep(5 * time.Second)
-    }
+	//    out, err := exec.Command("/bin/sh", "-c", "./W3CServer.sh", "stopme").CombinedOutput()
+	out, err := exec.Command("./W3CServer.sh", "stopme").CombinedOutput()
+	if err != nil {
+		utils.Error.Printf("Script execute error:%s", string(out))
+		utils.Error.Printf("Script execute error:%v", err)
+		utils.Error.Println("Script execute error command: stopme")
+	} else {
+		utils.Info.Println("Script stopme executed successfully.")
+		time.Sleep(5 * time.Second)
+	}
 }
 
 func executeNoScriptStartme() {
-    res := startServerCore()
-    if (res == true) {
-        time.Sleep(5 * time.Second)
-        res := startServiceManager()
-        if (res == true) {
-            time.Sleep(2 * time.Second)
-            res := startWSManager()
-            if (res == true) {
-                time.Sleep(2 * time.Second)
-                res := startHTTPManager()
-                if (res == true) {
-                    time.Sleep(2 * time.Second)
-                    res := startAGTServer()
-                    if (res == true) {
-                        time.Sleep(2 * time.Second)
-                        res := startATServer()
-                        if (res == true) {
-                            utils.Info.Println("Script startme executed successfully.")
-                            time.Sleep(10 * time.Second)
-                        }
-                    }
-                }
-            }
-        }
-    }
+	res := startServerCore()
+	if res == true {
+		time.Sleep(5 * time.Second)
+		res := startServiceManager()
+		if res == true {
+			time.Sleep(2 * time.Second)
+			res := startWSManager()
+			if res == true {
+				time.Sleep(2 * time.Second)
+				res := startHTTPManager()
+				if res == true {
+					time.Sleep(2 * time.Second)
+					res := startAGTServer()
+					if res == true {
+						time.Sleep(2 * time.Second)
+						res := startATServer()
+						if res == true {
+							utils.Info.Println("Script startme executed successfully.")
+							time.Sleep(10 * time.Second)
+						}
+					}
+				}
+			}
+		}
+	}
 }
 
 func startServerCore() bool {
-    out, err := exec.Command("screen", "-d", "-m", "-t", "serverCore", "sh", "servercore.sh").CombinedOutput()
-    if err != nil {
-	utils.Error.Printf("Script execute error:%s", string(out))
-	utils.Error.Printf("Script execute error:%v", err)
-	utils.Error.Println("Script execute error command: screen -d -m -S serverCore")
-    } else {
-        time.Sleep(1 * time.Second)
-        utils.Info.Println("ServerCore started successfully.")
-        return true
-    }
-    return false
+	out, err := exec.Command("screen", "-d", "-m", "-t", "serverCore", "sh", "servercore.sh").CombinedOutput()
+	if err != nil {
+		utils.Error.Printf("Script execute error:%s", string(out))
+		utils.Error.Printf("Script execute error:%v", err)
+		utils.Error.Println("Script execute error command: screen -d -m -S serverCore")
+	} else {
+		time.Sleep(1 * time.Second)
+		utils.Info.Println("ServerCore started successfully.")
+		return true
+	}
+	return false
 }
 
 func startServiceManager() bool {
-    out, err := exec.Command("screen", "-d", "-m", "-t", "serviceMgr", "sh", "servicemanager.sh").CombinedOutput()
-    if err != nil {
-	utils.Error.Printf("Script execute error:%s", string(out))
-	utils.Error.Printf("Script execute error:%v", err)
-	utils.Error.Println("Script execute error command: screen -d -m -S serviceMgr")
-    } else {
-        time.Sleep(1 * time.Second)
-        utils.Info.Println("Service Manager started successfully.")
-        return true
-    }
-    return false
+	out, err := exec.Command("screen", "-d", "-m", "-t", "serviceMgr", "sh", "servicemanager.sh").CombinedOutput()
+	if err != nil {
+		utils.Error.Printf("Script execute error:%s", string(out))
+		utils.Error.Printf("Script execute error:%v", err)
+		utils.Error.Println("Script execute error command: screen -d -m -S serviceMgr")
+	} else {
+		time.Sleep(1 * time.Second)
+		utils.Info.Println("Service Manager started successfully.")
+		return true
+	}
+	return false
 }
 
 func startWSManager() bool {
-    out, err := exec.Command("screen", "-d", "-m", "-t", "wsMgr", "sh", "wsmanager.sh").CombinedOutput()
-    if err != nil {
-	utils.Error.Printf("Script execute error:%s", string(out))
-	utils.Error.Printf("Script execute error:%v", err)
-	utils.Error.Println("Script execute error command: screen -d -m -S wsMgr")
-    } else {
-        time.Sleep(1 * time.Second)
-        utils.Info.Println("WebSocket Manager started successfully.")
-        return true
-    }
-    return false
+	out, err := exec.Command("screen", "-d", "-m", "-t", "wsMgr", "sh", "wsmanager.sh").CombinedOutput()
+	if err != nil {
+		utils.Error.Printf("Script execute error:%s", string(out))
+		utils.Error.Printf("Script execute error:%v", err)
+		utils.Error.Println("Script execute error command: screen -d -m -S wsMgr")
+	} else {
+		time.Sleep(1 * time.Second)
+		utils.Info.Println("WebSocket Manager started successfully.")
+		return true
+	}
+	return false
 }
 
 func startHTTPManager() bool {
-    out, err := exec.Command("screen", "-d", "-m", "-t", "httpMgr", "sh", "httpmanager.sh").CombinedOutput()
-    if err != nil {
-	utils.Error.Printf("Script execute error:%s", string(out))
-	utils.Error.Printf("Script execute error:%v", err)
-	utils.Error.Println("Script execute error command: screen -d -m -S httpMgr")
-    } else {
-        time.Sleep(1 * time.Second)
-        utils.Info.Println("HTTP Manager started successfully.")
-        return true
-    }
-    return false
+	out, err := exec.Command("screen", "-d", "-m", "-t", "httpMgr", "sh", "httpmanager.sh").CombinedOutput()
+	if err != nil {
+		utils.Error.Printf("Script execute error:%s", string(out))
+		utils.Error.Printf("Script execute error:%v", err)
+		utils.Error.Println("Script execute error command: screen -d -m -S httpMgr")
+	} else {
+		time.Sleep(1 * time.Second)
+		utils.Info.Println("HTTP Manager started successfully.")
+		return true
+	}
+	return false
 }
 
 func startAGTServer() bool {
-    out, err := exec.Command("screen", "-d", "-m", "-t", "agtServer", "sh", "agtserver.sh").CombinedOutput()
-    if err != nil {
-	utils.Error.Printf("Script execute error:%s", string(out))
-	utils.Error.Printf("Script execute error:%v", err)
-	utils.Error.Println("Script execute error command: screen -d -m -S agtServer")
-    } else {
-        time.Sleep(1 * time.Second)
-        utils.Info.Println("AGT server started successfully.")
-        return true
-    }
-    return false
+	out, err := exec.Command("screen", "-d", "-m", "-t", "agtServer", "sh", "agtserver.sh").CombinedOutput()
+	if err != nil {
+		utils.Error.Printf("Script execute error:%s", string(out))
+		utils.Error.Printf("Script execute error:%v", err)
+		utils.Error.Println("Script execute error command: screen -d -m -S agtServer")
+	} else {
+		time.Sleep(1 * time.Second)
+		utils.Info.Println("AGT server started successfully.")
+		return true
+	}
+	return false
 }
 
 func startATServer() bool {
-    out, err := exec.Command("screen", "-d", "-m", "-t", "atServer", "sh", "atserver.sh").CombinedOutput()
-    if err != nil {
-	utils.Error.Printf("Script execute error:%s", string(out))
-	utils.Error.Printf("Script execute error:%v", err)
-	utils.Error.Println("Script execute error command: screen -d -m -S atServer")
-    } else {
-        time.Sleep(1 * time.Second)
-        utils.Info.Println("AT server started successfully.")
-        return true
-    }
-    return false
+	out, err := exec.Command("screen", "-d", "-m", "-t", "atServer", "sh", "atserver.sh").CombinedOutput()
+	if err != nil {
+		utils.Error.Printf("Script execute error:%s", string(out))
+		utils.Error.Printf("Script execute error:%v", err)
+		utils.Error.Println("Script execute error command: screen -d -m -S atServer")
+	} else {
+		time.Sleep(1 * time.Second)
+		utils.Info.Println("AT server started successfully.")
+		return true
+	}
+	return false
 }
 
 /**
 * restartServer:
-* 1. call stopme script. 2. call startme script 3. wait 30 secs 4. kill receiveSubscriptions() 
+* 1. call stopme script. 2. call startme script 3. wait 30 secs 4. kill receiveSubscriptions()
 * 5. rerun initSubscribeSession 6. start receiveSubscriptions() 7. set wdTimer
 **/
 func restartServer(addr *string, triggerChannel chan string) (*websocket.Conn, *time.Timer) {
-        executeStopme()
-        executeNoScriptStartme()
-        time.Sleep(10 * time.Second)
-        // receiveSubscriptions() killed by its own timeout
-  	dataConn := initSubscribeSession(addr)
+	executeStopme()
+	executeNoScriptStartme()
+	time.Sleep(10 * time.Second)
+	// receiveSubscriptions() killed by its own timeout
+	dataConn := initSubscribeSession(addr)
 	if dataConn != nil {
-                go receiveSubscriptions(dataConn, triggerChannel)
+		go receiveSubscriptions(dataConn, triggerChannel)
 	}
-        wdTimer := time.NewTimer(2*subscribePeriod * time.Second)
-        return dataConn, wdTimer
+	wdTimer := time.NewTimer(2 * subscribePeriod * time.Second)
+	return dataConn, wdTimer
 }
 
 func main() {
