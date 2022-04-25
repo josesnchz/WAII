@@ -548,8 +548,8 @@ func (popToken PopToken) GetPubEcdsa() (*ecdsa.PublicKey, error) {
 
 // Validates keys: same alg, same thumprint...
 func (popToken PopToken) CheckThumb(thumprint string) (bool, string) {
-	if thumprint != "" || thumprint != popToken.Jwk.Thumb {
-		return false, "Invalid Thumbprint"
+	if thumprint == "" || thumprint != popToken.Jwk.Thumb {
+		return false, "Invalid Thumbprint: " + popToken.Jwk.Thumb
 	}
 	return true, "ok"
 }
