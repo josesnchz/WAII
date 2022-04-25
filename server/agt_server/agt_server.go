@@ -123,7 +123,6 @@ func generateResponse(input string, pop string) string {
 		return `{"error": "Client request malformed"}`
 	}
 	if authenticateClient(payload) {
-		fmt.Printf("\n\n%s\n\n", pop)
 		if pop != "" {
 			return generateLTAgt(payload, pop)
 		}
