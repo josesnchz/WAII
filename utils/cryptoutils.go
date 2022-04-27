@@ -352,7 +352,7 @@ func (jkey *JsonWebKey) GenThumbprint() string {
 		JsonRecursiveMarshall("e", jkey.PubExp, &thumbprint)
 		JsonRecursiveMarshall("kty", jkey.Type, &thumbprint)
 		JsonRecursiveMarshall("n", jkey.PubMod, &thumbprint)
-	case "ECDSA":
+	case "EC":
 		JsonRecursiveMarshall("crv", jkey.Curve, &thumbprint)
 		JsonRecursiveMarshall("kty", jkey.Type, &thumbprint)
 		JsonRecursiveMarshall("x", jkey.Xcoord, &thumbprint)

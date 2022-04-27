@@ -112,6 +112,8 @@ func initKey(prvDirectory string) {
 		return
 	}
 	utils.Info.Printf("RSA key imported correctly")
+	_, pubKey, _ := utils.PemEncodeRSA(privKey)
+	utils.Info.Printf("RSA Pub Key: %s", pubKey)
 }
 
 // GenerateResponse must unmarshall the payload, then ask for AGT Generation
