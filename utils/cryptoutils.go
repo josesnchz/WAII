@@ -599,13 +599,12 @@ func (popToken PopToken) CheckIat(gap int, lifetime int) (bool, string) {
 	act := int(time.Now().Unix())
 	iat, err := strconv.Atoi(popToken.PayloadClaims["iat"])
 	if err != nil {
-		return false, "No iat claim"
+		return false, "Bad iat claim"
 	}
-	if iat-gap >= act { // Iat marks before the actual time
-		return false, "Bad iat"
+	if !(act < iat+gap) {
+		return false, "Bad iat: future time"
 	}
-
-	if act > iat+lifetime+gap { // Check if token is still valid
+	if !(act > iat-gap-lifetime) { // Check if token is still valid
 		return false, "Expired"
 	}
 	return true, "OK"
