@@ -601,11 +601,11 @@ func (popToken PopToken) CheckIat(gap int, lifetime int) (bool, string) {
 	if err != nil {
 		return false, "Bad iat claim"
 	}
-	if !(act < iat+gap) {
-		return false, "Bad iat: future time"
-	}
-	if !(act > iat-gap-lifetime) { // Check if token is still valid
+	if !(act < iat+gap+lifetime) {
 		return false, "Expired"
+	}
+	if !(act > iat-gap) { // Check if token is still valid
+		return false, "Created in future time"
 	}
 	return true, "OK"
 }
