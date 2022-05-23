@@ -11,9 +11,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/josesnchz/WAII/utils"
 )
 
 var upgrader = websocket.Upgrader{
@@ -54,11 +54,16 @@ func (pathList *PathList) vssPathListHandler(w http.ResponseWriter, r *http.Requ
 	if err != nil {
 		utils.Error.Printf("problems with json.Marshal, ", err)
 		http.Error(w, "Unable to fetch vsspathlist", http.StatusInternalServerError)
+	} else {
 	}
 
+	maxChars := len(bytes)
+	if maxChars > 99 {
+		maxChars = 99
+	}
+	utils.Info.Printf("initVssPathListServer():Response=%s...(truncated to max 100 bytes)", bytes[0:maxChars])
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(bytes)
-	utils.Info.Printf("initVssPathListServer():Response=%s...(truncated to 100 bytes)", bytes[0:101])
 }
 
 func transportRegisterHandler(w http.ResponseWriter, r *http.Request) {

@@ -93,6 +93,7 @@ func GenerateHmac(input string, key string) string {
 	return string(mac.Sum(nil))
 }
 
+//*
 func VerifyTokenSignature(token string, key string) error { // compatible with result from generateHmac()
 	var jwt JsonWebToken
 	err := jwt.DecodeFromFull(token)
@@ -100,7 +101,7 @@ func VerifyTokenSignature(token string, key string) error { // compatible with r
 		return err
 	}
 	return jwt.CheckSignature(key)
-}
+} //*/
 
 func ExtractFromToken(token string, claim string) string { // TODO remove white space sensitivity
 	delimiter1 := strings.Index(token, ".")

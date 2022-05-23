@@ -19,15 +19,15 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gorilla/websocket"
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/gorilla/websocket"
+	"github.com/josesnchz/WAII/utils"
 )
 
-const portNum  = 8080 // WS mgr portnum
-const urlPath  = ""
-const subscribeCommand  = `{"action":"subscribe", "path":"Vehicle/Cabin/Door/Count", "filter":"$intervalEQ5", "requestId":"999"}`
-const subscribePeriod = 5  // set to value X set in "$intervalEQX" above
+const portNum = 8080 // WS mgr portnum
+const urlPath = ""
+const subscribeCommand = `{"action":"subscribe", "path":"Vehicle/Cabin/Door/Count", "filter":"$intervalEQ5", "requestId":"999"}`
+const subscribePeriod = 5 // set to value X set in "$intervalEQX" above
 
 var addr *string
 

@@ -1,7 +1,7 @@
 /**
 * (C) 2020 Geotab Inc
 *
-* All files and artifacts in the repository at https://github.com/MEAE-GOT/WAII
+* All files and artifacts in the repository at https://github.com/josesnchz/WAII
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -9,20 +9,20 @@
 package main
 
 import (
-	"bufio"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 	"unsafe"
 
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/google/uuid"
+	"github.com/josesnchz/WAII/utils"
 )
 
 // #include <stdlib.h>
@@ -37,12 +37,19 @@ var VSSTreeRoot C.long
 // set to MAXFOUNDNODES in cparserlib.h
 const MAXFOUNDNODES = 1500
 
+// Used for clock unsync tolerance
+const GAP = 3
+const LIFETIME = 5
+
+// Stores a cache of the jwt ids received to not be reused
+var jtiCache map[string]struct{}
+
 type searchData_t struct { // searchData_t defined in cparserlib.h
 	path            [512]byte // cparserlib.h: #define MAXCHARSPATH 512; typedef char path_t[MAXCHARSPATH];
 	foundNodeHandle int64     // defined as long in cparserlib.h
 }
 
-var agtKey string
+var agtKey *rsa.PublicKey
 
 const theAtSecret = "averysecretkeyvalue2" //not shared
 
@@ -57,6 +64,7 @@ type AtValidatePayload struct {
 	Validation string   `json:"validation"`
 }
 
+/****
 type AgToken struct {
 	Vin      string `json:"vin"`
 	Iat      string `json:"iat"`
@@ -67,12 +75,13 @@ type AgToken struct {
 	JwtId    string `json:"jti"`
 	Alg      string `json:"alg"`
 }
-
+**/
 type AtGenPayload struct { // Struct containing all received data in the request (AGT encoded + claims + DecodedAGT)
 	Token   string `json:"token"`
 	Purpose string `json:"purpose"`
 	Pop     string `json:"pop"`
-	Agt     AgToken
+	Agt     utils.ExtendedJwt
+	PopTk   utils.PopToken
 }
 
 var purposeList map[string]interface{}
@@ -123,22 +132,18 @@ func initVssFile() bool {
 }
 
 func initKey(pubDirectory string) {
-	pubFile, err := os.Open(pubDirectory) // Same as Private Key
+	err := utils.ImportRsaPubKey(pubDirectory, &agtKey)
 	if err != nil {
-		utils.Error.Printf("Error loading public agt key")
+		utils.Error.Printf("Error importing AGT key: %s", fmt.Sprintf("%v", err))
+		return
 	}
-	pubFileInfo, _ := pubFile.Stat()
-	size := pubFileInfo.Size()
-	pubBytes := make([]byte, size)
-	pubBuffer := bufio.NewReader(pubFile)
-	_, err = pubBuffer.Read(pubBytes)
-	agtKey = string(pubBytes)
+	utils.Info.Printf("AGT key imported correctly.")
 }
 
 func makeAtServerHandler(serverChannel chan string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		utils.Info.Printf("atServer:url=%s", req.URL.Path)
-		if req.URL.Path != "/atserver" {
+		if req.URL.Path != "/ats" {
 			http.Error(w, "404 url path not found.", 404)
 		} else if req.Method != "POST" {
 			http.Error(w, "400 bad request method.", 400)
@@ -164,16 +169,16 @@ func makeAtServerHandler(serverChannel chan string) func(http.ResponseWriter, *h
 }
 
 func initAtServer(serverChannel chan string, muxServer *http.ServeMux) {
-	utils.Info.Printf("initAtServer(): :8600/atserver")
+	utils.Info.Printf("initAtServer(): :8600/ats")
 	atServerHandler := makeAtServerHandler(serverChannel)
-	muxServer.HandleFunc("/atserver", atServerHandler)
+	muxServer.HandleFunc("/ats", atServerHandler)
 	utils.Error.Fatal(http.ListenAndServe(":8600", muxServer))
 }
 
 func generateResponse(input string) string {
-	if strings.Contains(input, "purpose") == true {
+	if strings.Contains(input, "purpose") {
 		return accessTokenResponse(input)
-	} else if strings.Contains(input, "context") == true {
+	} else if strings.Contains(input, "context") {
 		return noScopeResponse(input)
 	} else {
 		return tokenValidationResponse(input)
@@ -194,7 +199,7 @@ func validateRequestAccess(purpose string, action string, paths []string) int {
 	var pathSubList []string
 	for i := 0; i < numOfPaths; i++ {
 		numOfWildcardPaths := 1
-		if strings.Contains(paths[i], "*") == true {
+		if strings.Contains(paths[i], "*") {
 			searchData := [MAXFOUNDNODES]searchData_t{}
 			// call int VSSSearchNodes(char* searchPath, long rootNode, int maxFound, searchData_t* searchData, bool anyDepth, bool leafNodesOnly, int listSize, noScopeList_t* noScopeList, int* validation);
 			cpath := C.CString(paths[i])
@@ -250,7 +255,7 @@ func matchingContext(index int, context string) bool { // identical to checkAuth
 				}
 			}
 		}
-		if actorValid[0] == true && actorValid[1] == true && actorValid[2] == true {
+		if actorValid[0] && actorValid[1] && actorValid[2] {
 			return true
 		}
 	}
@@ -270,7 +275,7 @@ func synthesizeNoScope(index int) string {
 
 func getNoAccessScope(context string) string {
 	for i := 0; i < len(sList); i++ {
-		if matchingContext(i, context) == true {
+		if matchingContext(i, context) {
 			return synthesizeNoScope(i)
 		}
 	}
@@ -340,12 +345,12 @@ func extractAtValidatePayloadLevel2(pathList []interface{}, atValidatePayload *A
 	atValidatePayload.Paths = make([]string, len(pathList))
 	i := 0
 	for k, v := range pathList {
-		switch v.(type) {
+		switch typ := v.(type) {
 		case string:
 			utils.Info.Println(k, "is a string:")
 			atValidatePayload.Paths[i] = v.(string)
 		default:
-			utils.Info.Println(k, "is of an unknown type")
+			utils.Info.Println(k, "is of an unknown type:", typ)
 		}
 		i++
 	}
@@ -358,13 +363,20 @@ func accessTokenResponse(input string) string {
 		utils.Error.Printf("accessTokenResponse:error input=%s", input)
 		return `{"error": "Client request malformed"}`
 	}
-	var errResp string
-	payload.Agt, errResp = extractTokenPayload(payload.Token)
-	if len(errResp) > 0 {
-		return errResp
+	err = payload.Agt.DecodeFromFull(payload.Token)
+	if err != nil {
+		utils.Error.Printf("accessTokenResponse: error decoding token=%s", payload.Token)
+		return `{"error":"AGT Malformed"}`
+	}
+	if payload.Pop != "" {
+		err = payload.PopTk.Unmarshal(payload.Pop)
+		if err != nil {
+			utils.Error.Printf("accessTokenResponse: error decoding pop, error=%s, pop=%s", err, payload.Agt.PayloadClaims["pop"])
+			return `{"error":"POP malformed"}`
+		}
 	}
 	valid, errResponse := validateRequest(payload)
-	if valid == true {
+	if valid {
 		return generateAt(payload)
 	}
 	return errResponse
@@ -372,10 +384,10 @@ func accessTokenResponse(input string) string {
 
 func validateTokenTimestamps(iat int, exp int) bool {
 	now := time.Now()
-	if now.Before(time.Unix(int64(iat), 0)) == true {
+	if now.Before(time.Unix(int64(iat), 0)) {
 		return false
 	}
-	if now.After(time.Unix(int64(exp), 0)) == true {
+	if now.After(time.Unix(int64(exp), 0)) {
 		return false
 	}
 	return true
@@ -388,7 +400,7 @@ func validatePurpose(purpose string, context string) bool { // TODO: learn how t
 		if pList[i].Short == purpose {
 			//utils.Info.Printf("validatePurpose:purpose match=%s", pList[i].Short)
 			valid = checkAuthorization(i, context)
-			if valid == true {
+			if valid {
 				break
 			}
 		}
@@ -413,7 +425,7 @@ func checkAuthorization(index int, context string) bool {
 				}
 			}
 		}
-		if actorValid[0] == true && actorValid[1] == true && actorValid[2] == true {
+		if actorValid[0] && actorValid[1] && actorValid[2] {
 			return true
 		}
 	}
@@ -441,71 +453,130 @@ func getActorRole(actorIndex int, context string) string {
 // 	return string(payload)
 // }
 
-func extractTokenPayload(token string) (AgToken, string) {
-	var claims AgToken
-	var agt utils.JsonWebToken
-	err := agt.DecodeFromFull(token)
-	if err != nil {
-		utils.Error.Printf("extractTokenPayload:unable to decode token, error= ", err)
-		return claims, `{error: AG token malformed}`
-	}
-	err = json.Unmarshal([]byte(agt.GetPayload()), &claims)
-	if err != nil {
-		utils.Error.Printf("extractTokenPayload:token payload=%s, error=%s", agt.GetPayload(), err)
-		return claims, `{"error": "AG token malformed"}`
-	}
-	err = json.Unmarshal([]byte(agt.GetHeader()), &claims)
-	if err != nil {
-		utils.Error.Printf("extractTokenPayload:token header=%s, error=%s", agt.GetHeader(), err)
-		return claims, `{"error": "AG token malformed"}`
-	}
-	return claims, ""
-}
+// func extractTokenPayload(token string) (AgToken, string) {
+// 	var claims AgToken
+// 	var agt utils.JsonWebToken
+// 	err := agt.DecodeFromFull(token)
+// 	if err != nil {
+// 		utils.Error.Printf("extractTokenPayload:unable to decode token, error= ", err)
+// 		return claims, `{error: AG token malformed}`
+// 	}
+// 	err = json.Unmarshal([]byte(agt.GetPayload()), &claims)
+// 	if err != nil {
+// 		utils.Error.Printf("extractTokenPayload:token payload=%s, error=%s", agt.GetPayload(), err)
+// 		return claims, `{"error": "AG token malformed"}`
+// 	}
+// 	err = json.Unmarshal([]byte(agt.GetHeader()), &claims)
+// 	if err != nil {
+// 		utils.Error.Printf("extractTokenPayload:token header=%s, error=%s", agt.GetHeader(), err)
+// 		return claims, `{"error": "AG token malformed"}`
+// 	}
+// 	return claims, ""
+// }
 
 func checkVin(vin string) bool {
-	return true // should be checked with VIN in tree
+	if len(vin) == 0 {
+		return true // this can only happen if AG token does not contain VIN, which is OK according to spec
+	}
+	return true // TODO:should be checked with VIN in tree
+}
+
+func deleteJti(jti string) {
+	time.Sleep((GAP + LIFETIME + 5) * time.Second)
+	delete(jtiCache, jti)
+}
+
+// Checks if jwt id exist in cache, if it does, return false. If not, it adds it and automatically clear it from cache when it expires
+func addCheckJti(jti string) bool {
+	if jtiCache == nil { // If map is empty (first time), it doesnt even check, initializes and add
+		jtiCache = make(map[string]struct{})
+		jtiCache[jti] = struct{}{}
+		go deleteJti(jti)
+		return true
+	}
+	if _, ok := jtiCache[jti]; ok { // Check if jti exist in cache
+		return false
+	}
+	// If we get here, it does not exist in cache
+	jtiCache[jti] = struct{}{}
+	go deleteJti(jti)
+	return true
+}
+
+func validatePop(payload AtGenPayload) (bool, string) {
+	// Check jti
+	if !addCheckJti(payload.PopTk.PayloadClaims["jti"]) {
+		utils.Error.Printf("validateRequest: JTI used")
+		return false, `{"error": "Repeated JTI"}`
+	}
+	// Check signaure
+	if err := payload.PopTk.CheckSignature(); err != nil {
+		utils.Info.Printf("validateRequest: Invalid POP signature: %s", err)
+		return false, `{"error": "Cannot validate POP signature"}`
+	}
+	// Check exp: no need, iat will be used instead
+	// Check iat
+	if ok, cause := payload.PopTk.CheckIat(GAP, LIFETIME); !ok {
+		utils.Info.Printf("validateRequest: Invalid POP iat: %s", cause)
+		return false, `{"error": "Cannot validate POP iat"}`
+	}
+	// Check that pub (thumprint) corresponds with pop key
+	if ok, _ := payload.PopTk.CheckThumb(payload.Agt.PayloadClaims["pub"]); !ok {
+		utils.Info.Printf("validateRequest: PubKey in POP is not same as in AGT")
+		return false, `{"error": "Keys in POP and AGToken are not matching"}`
+	}
+	// Check aud
+	if ok, _ := payload.PopTk.CheckAud("vissv2/ats"); !ok {
+		utils.Info.Printf("validateRequest: Aud in POP not valid")
+		return false, `{"error": "Invalid aud"}`
+	}
+	//utils.Info.Printf("validateRequest:Proof of possession of key pair failed")
+	//return false, `{"error": "Proof of possession of key pair failed"}`
+	return true, ""
 }
 
 func validateRequest(payload AtGenPayload) (bool, string) {
-	if checkVin(payload.Agt.Vin) == false {
-		utils.Info.Printf("validateRequest:incorrect VIN=%s", payload.Agt.Vin)
+	if !checkVin(payload.Agt.HeaderClaims["vin"]) {
+		utils.Info.Printf("validateRequest:incorrect VIN=%s", payload.Agt.HeaderClaims["vin"])
 		return false, `{"error": "Incorrect vehicle identifiction"}`
 	}
-	err := utils.VerifyTokenSignature(payload.Token, agtKey)
+	// To verify the AG Token signature
+	err := payload.Agt.Token.CheckAssymSignature(agtKey)
 	if err != nil {
 		utils.Info.Printf("validateRequest:invalid signature, error: %s, token:%s", err, payload.Token)
 		return false, `{"error": "AG token signature validation failed"}`
 	}
-	iat, err := strconv.Atoi(payload.Agt.Iat)
+	iat, err := strconv.Atoi(payload.Agt.PayloadClaims["iat"])
 	if err != nil {
 		return false, `{"error": AG token iat timestamp malformed"}`
 	}
-	exp, err := strconv.Atoi(payload.Agt.Exp)
+	exp, err := strconv.Atoi(payload.Agt.PayloadClaims["exp"])
 	if err != nil {
 		return false, `{"error": "AG token exp timestamp malformed"}`
 	}
-	if validateTokenTimestamps(iat, exp) == false {
-		utils.Info.Printf("validateRequest:invalid token timestamps, iat=%d, exp=%d", payload.Agt.Iat, payload.Agt.Exp)
+	if !validateTokenTimestamps(iat, exp) {
+		utils.Info.Printf("validateRequest:invalid token timestamps, iat=%d, exp=%d", payload.Agt.PayloadClaims["iat"], payload.Agt.PayloadClaims["exp"])
 		return false, `{"error": "AG token timestamp validation failed"}`
 	}
-	if payload.Agt.Key != "" && payload.Pop != "GHI" { // PoP should be a signed timestamp
-		utils.Info.Printf("validateRequest:Proof of possession of key pair failed")
-		return false, `{"error": "Proof of possession of key pair failed"}`
+	// POP Checking
+	if payload.Agt.PayloadClaims["pub"] != "" { // That means the agt is associated with a public key
+		if ok, errmsj := validatePop(payload); !ok {
+			return ok, errmsj
+		}
 	}
-	if validatePurpose(payload.Purpose, payload.Agt.Context) == false {
-		utils.Info.Printf("validateRequest:invalid purpose=%s, context=%s", payload.Purpose, payload.Agt.Context)
+	if !validatePurpose(payload.Purpose, payload.Agt.PayloadClaims["clx"]) {
+		utils.Info.Printf("validateRequest:invalid purpose=%s, context=%s", payload.Purpose, payload.Agt.PayloadClaims["clx"])
 		return false, `{"error": "Purpose validation failed"}`
 	}
 	return true, ""
 }
 
 func generateAt(payload AtGenPayload) string {
-	uuid, err := exec.Command("uuidgen").Output()
-	if err != nil {
+	unparsedId, err := uuid.NewRandom()
+	if err != nil { // Better way to generate uuid than calling an ext program
 		utils.Error.Printf("generateAgt:Error generating uuid, err=%s", err)
 		return `{"error": "Internal error"}`
 	}
-	uuid = uuid[:len(uuid)-1] // remove '\n' char
 	iat := int(time.Now().Unix())
 	exp := iat + 1*60*60 // 1 hour
 	var jwtoken utils.JsonWebToken
@@ -514,9 +585,9 @@ func generateAt(payload AtGenPayload) string {
 	jwtoken.AddClaim("iat", strconv.Itoa(iat))
 	jwtoken.AddClaim("exp", strconv.Itoa(exp))
 	jwtoken.AddClaim("pur", payload.Purpose)
-	jwtoken.AddClaim("clx", payload.Agt.Context)
+	jwtoken.AddClaim("clx", payload.Agt.PayloadClaims["clx"])
 	jwtoken.AddClaim("aud", "w3org/gen2")
-	jwtoken.AddClaim("jti", string(uuid))
+	jwtoken.AddClaim("jti", unparsedId.String())
 	utils.Info.Printf("generateAt:jwtHeader=%s", jwtoken.GetHeader())
 	utils.Info.Printf("generateAt:jwtPayload=%s", jwtoken.GetPayload())
 	jwtoken.Encode()
@@ -527,7 +598,7 @@ func generateAt(payload AtGenPayload) string {
 func initPurposelist() {
 	data, err := ioutil.ReadFile("purposelist.json")
 	if err != nil {
-		utils.Error.Printf("Error reading purposelist.json\n")
+		utils.Error.Printf("Error reading purposelist.json; %s\n", err)
 		os.Exit(-1)
 	}
 	err = json.Unmarshal([]byte(data), &purposeList)
@@ -633,7 +704,7 @@ func extractPurposeElementsL4ContextL2(k int, index int, contextElem map[string]
 			m := 0
 			for l, t := range vvv {
 				utils.Info.Println(l, t)
-				switch t.(type) {
+				switch typ := t.(type) {
 				case string:
 					if i == "user" {
 						if m == 0 {
@@ -652,7 +723,7 @@ func extractPurposeElementsL4ContextL2(k int, index int, contextElem map[string]
 						pList[index].Context[k].Actor[2].Role[m] = t.(string)
 					}
 				default:
-					utils.Info.Println(k, "is of an unknown type")
+					utils.Info.Println(k, "is of an unknown type: ", typ)
 				}
 				m++
 			}
@@ -785,7 +856,7 @@ func extractScopeElementsL4ContextL2(k int, index int, contextElem map[string]in
 			m := 0
 			for l, t := range vvv {
 				utils.Info.Println(l, t)
-				switch t.(type) {
+				switch typ := t.(type) {
 				case string:
 					if i == "user" {
 						if m == 0 {
@@ -804,7 +875,7 @@ func extractScopeElementsL4ContextL2(k int, index int, contextElem map[string]in
 						sList[index].Context[k].Actor[2].Role[m] = t.(string)
 					}
 				default:
-					utils.Info.Println(k, "is of an unknown type")
+					utils.Info.Println(k, "is of an unknown type:", typ)
 				}
 				m++
 			}
@@ -849,7 +920,7 @@ func main() {
 	initPurposelist()
 	initScopeList()
 	initVssFile()
-	initKey("security_keys/rsa_public_key.pem")
+	initKey("agt_public_key.rsa")
 
 	go initAtServer(serverChan, muxServer)
 

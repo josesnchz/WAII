@@ -13,9 +13,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
+	"github.com/josesnchz/WAII/utils"
 )
 
 var uniqueTopicName string

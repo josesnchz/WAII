@@ -16,6 +16,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -43,11 +44,6 @@ type JsonWebToken struct {
 	EncodedHeader    string
 	EncodedPayload   string
 	EncodedSignature string
-}
-type ExtendedJwt struct {
-	token         JsonWebToken
-	headerClaims  map[string]string
-	PayloadClaims map[string]string
 }
 
 func (token *JsonWebToken) SetHeader(algorithm string) {
@@ -88,13 +84,13 @@ func (token *JsonWebToken) AssymSign(privKey crypto.PrivateKey) error {
 		signature = rSign.Bytes() // APPENDS r,s in big endian
 		signature = append(signature, sSign.Bytes()...)
 	default:
-		return errors.New(fmt.Sprintf("error: Can not sign JWT: Invalid key type: %T", typ))
+		return fmt.Errorf("error: can not sign jwt: invalid key type: %T", typ)
 	}
 	token.EncodedSignature = base64.RawURLEncoding.EncodeToString(signature)
 	return nil
 }
 
-// Signs the token. In case of HS signature, string key must be given. In case of Assymetric signature, string must be PEM format text or *rsa/ecdsa.privateKey
+// Signs the token. In case of HS signature, string key must be given.
 func (token *JsonWebToken) SymmSign(key string) {
 	token.Encode()
 	token.EncodedSignature = base64.RawURLEncoding.EncodeToString([]byte(GenerateHmac(token.EncodedHeader+"."+token.EncodedPayload, key)))
@@ -141,10 +137,10 @@ func (token JsonWebToken) CheckSignature(key interface{}) error {
 		if ok && base64.RawURLEncoding.EncodeToString([]byte(GenerateHmac(token.EncodedHeader+"."+token.EncodedPayload, strKey))) == token.EncodedSignature {
 			return nil
 		} else {
-			return errors.New("Invalid HS256 Signature")
+			return errors.New("invalid hs256 signature")
 		}
 	}
-	return errors.New("Invalid signing method")
+	return errors.New("invalid signing method")
 }
 
 func (token JsonWebToken) CheckAssymSignature(key crypto.PublicKey) (err error) {
@@ -165,21 +161,38 @@ func (token JsonWebToken) CheckAssymSignature(key crypto.PublicKey) (err error) 
 		pubKey := key.(*ecdsa.PublicKey)
 		// https://datatracker.ietf.org/doc/html/rfc7518#section-3.4
 		if pubKey.Curve != elliptic.P256() {
-			return errors.New("Elliptic curve type not supported")
+			return errors.New("elliptic curve type not supported")
 		}
 		var r, s *big.Int
 		r = new(big.Int)
 		s = new(big.Int)
-		r.SetBytes(signature[:31])
+		r.SetBytes(signature[:32])
 		s.SetBytes(signature[32:])
 		// We have to hash the token to check it
-		token.Encode()
-		hashed := sha256.Sum256([]byte(token.EncodedHeader + "." + token.EncodedPayload + "." + token.EncodedSignature))
+		hashed := sha256.Sum256([]byte(token.EncodedHeader + "." + token.EncodedPayload))
 		if !ecdsa.Verify(pubKey, hashed[:], r, s) {
-			err = errors.New("Invalid ECDSA signature")
+			err = errors.New("invalid ecdsa signature")
 		}
 		return err
 	default:
-		return errors.New(fmt.Sprintf("Public Key Alg not supported: %T", typ))
+		return fmt.Errorf("public key alg not supported: %t", typ)
 	}
+}
+
+type ExtendedJwt struct {
+	Token         JsonWebToken
+	HeaderClaims  map[string]string
+	PayloadClaims map[string]string
+}
+
+func (ext *ExtendedJwt) DecodeFromFull(input string) error {
+	err := ext.Token.DecodeFromFull(input)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal([]byte(ext.Token.Header), &ext.HeaderClaims)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal([]byte(ext.Token.Payload), &ext.PayloadClaims)
 }

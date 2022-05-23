@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
 	MQTT "github.com/eclipse/paho.mqtt.golang"
 	"github.com/gorilla/websocket"
+	"github.com/josesnchz/WAII/utils"
 )
 
 var mqttChannel chan string

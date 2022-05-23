@@ -14,7 +14,6 @@ import (
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/md5"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -28,6 +27,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Gets rsa key in pem format and decodes it into rsa.privatekey
@@ -35,10 +36,10 @@ func PemDecodeRSA(pemKey string, privKey **rsa.PrivateKey) error {
 	pemBlock, _ := pem.Decode([]byte(pemKey)) // Gets pem_block from raw key
 	// Checking key type and correct decodification
 	if pemBlock == nil {
-		return errors.New("Private key not found or is not in pem format")
+		return errors.New("private key not found or is not in pem format")
 	}
 	if pemBlock.Type != "RSA PRIVATE KEY" {
-		return errors.New(fmt.Sprintf("Invalid private key, wrong type: %T", pemBlock.Type))
+		return fmt.Errorf("invalid private key, wrong type: %T", pemBlock.Type)
 	}
 	// Parses obtained pem block
 	var parsedKey interface{} //Still dont know what key type we need to parse
@@ -54,19 +55,43 @@ func PemDecodeRSA(pemKey string, privKey **rsa.PrivateKey) error {
 	return nil
 }
 
+// Gets rsa pub key in pem format and decodes it into rsa.publickey
+func PemDecodeRSAPub(pemKey string, pubKey **rsa.PublicKey) error {
+	pemBlock, _ := pem.Decode([]byte(pemKey))
+	if pemBlock == nil {
+		return errors.New("public Key not found or is not in pem format")
+	}
+	if (pemBlock.Type != "RSA PUBLIC KEY") && (pemBlock.Type != "PUBLIC KEY") {
+		return fmt.Errorf("invalid public key, wrong type: %s", pemBlock.Type)
+	}
+	var parsedKey interface{}
+	parsedKey, err := x509.ParsePKCS1PublicKey(pemBlock.Bytes)
+	if err != nil {
+		parsedKey, err = x509.ParsePKIXPublicKey(pemBlock.Bytes)
+		if err != nil {
+			return err
+		}
+	}
+	*pubKey = parsedKey.(*rsa.PublicKey)
+	return nil
+}
+
 // Gets ECDSA key in pem format and decodes it into ecdsa.PrivateKey
 func PemDecodeECDSA(pemKey string, privKey **ecdsa.PrivateKey) error {
 	pemBlock, _ := pem.Decode([]byte(pemKey))
 	if pemBlock == nil {
-		return errors.New("Private key not found or is not in pem format")
+		return errors.New("private key not found or is not in pem format")
 	}
 	if pemBlock.Type != "EC PRIVATE KEY" {
-		return errors.New(fmt.Sprintf("Invalid private key, wrong type: %T", pemBlock.Type))
+		return fmt.Errorf("invalid private key, wrong type: %T", pemBlock.Type)
 	}
 	var parsedKey interface{}
 	parsedKey, err := x509.ParseECPrivateKey(pemBlock.Bytes)
 	if err != nil {
 		parsedKey, err = x509.ParsePKCS8PrivateKey(pemBlock.Bytes)
+		if err != nil {
+			return err
+		}
 	}
 	*privKey = parsedKey.(*ecdsa.PrivateKey)
 	return nil
@@ -112,6 +137,26 @@ func ImportRsaKey(filename string, privKey **rsa.PrivateKey) error {
 		return err
 	}
 	err = PemDecodeRSA(string(prvBytes), privKey)
+	return err
+}
+
+// Gets rsa public ket from pem file
+func ImportRsaPubKey(filename string, pubKey **rsa.PublicKey) error {
+	pubFile, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	pubFileInfo, err := pubFile.Stat()
+	if err != nil {
+		return err
+	}
+	pubBytes := make([]byte, pubFileInfo.Size())
+	pubBuffer := bufio.NewReader(pubFile)
+	_, err = pubBuffer.Read(pubBytes)
+	if err != nil {
+		return err
+	}
+	err = PemDecodeRSAPub(string(pubBytes), pubKey)
 	return err
 }
 
@@ -200,10 +245,10 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Bytes: x509.MarshalPKCS1PrivateKey(rsaPriv),
 			}
 			privFile, err := os.Create(privFileName) //".rsa"
-			defer privFile.Close()
 			if err != nil {
 				return err
 			}
+			defer privFile.Close()
 			err = pem.Encode(privFile, &privBlock)
 			if err != nil {
 				return err
@@ -215,10 +260,10 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Bytes: x509.MarshalPKCS1PublicKey(&rsaPriv.PublicKey),
 			}
 			pubFile, err := os.Create(pubFileName) // + ".rsa.pub"
-			defer pubFile.Close()
 			if err != nil {
 				return err
 			}
+			defer pubFile.Close()
 			err = pem.Encode(pubFile, &pubBlock)
 			if err != nil {
 				return err
@@ -234,10 +279,10 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Bytes: ecdsaByt,
 			}
 			privFile, err := os.Create(privFileName) //+ ".ec"
-			defer privFile.Close()
 			if err != nil {
 				return err
 			}
+			defer privFile.Close()
 			err = pem.Encode(privFile, &privBlock)
 			if err != nil {
 				return err
@@ -250,17 +295,17 @@ func ExportKeyPair(privKey crypto.PrivateKey, privFileName string, pubFileName s
 				Bytes: ecdsaByt2,
 			}
 			pubFile, err := os.Create(pubFileName) // + ".ec.pub"
-			defer pubFile.Close()
 			if err != nil {
 				return err
 			}
+			defer pubFile.Close()
 			err = pem.Encode(pubFile, &pubBlock)
 			if err != nil {
 				return err
 			}
 		}
 	default:
-		return (errors.New(fmt.Sprintf("Key type not supported: %T", typ)))
+		return fmt.Errorf("key type not supported: %T", typ)
 	}
 	return nil
 }
@@ -294,7 +339,7 @@ func (jkey *JsonWebKey) Initialize(pubKey crypto.PublicKey, use string) error {
 		jkey.Xcoord = base64.RawURLEncoding.EncodeToString(ecdsaPubKey.X.Bytes())
 		jkey.Ycoord = base64.RawURLEncoding.EncodeToString(ecdsaPubKey.Y.Bytes())
 	default:
-		return errors.New(fmt.Sprintf("error: can not initialize jwk with pubkey of type: %T", typ))
+		return fmt.Errorf("error: can not initialize jwk with pubkey of type: %T", typ)
 	}
 	jkey.Thumb = jkey.GenThumbprint()
 	return nil
@@ -307,7 +352,7 @@ func (jkey *JsonWebKey) GenThumbprint() string {
 		JsonRecursiveMarshall("e", jkey.PubExp, &thumbprint)
 		JsonRecursiveMarshall("kty", jkey.Type, &thumbprint)
 		JsonRecursiveMarshall("n", jkey.PubMod, &thumbprint)
-	case "ECDSA":
+	case "EC":
 		JsonRecursiveMarshall("crv", jkey.Curve, &thumbprint)
 		JsonRecursiveMarshall("kty", jkey.Type, &thumbprint)
 		JsonRecursiveMarshall("x", jkey.Xcoord, &thumbprint)
@@ -348,7 +393,7 @@ type PopToken struct {
 	Jwt           JsonWebToken
 }
 
-// Gets the received token as string, and unmarshalls it.
+// Gets the received token as string, and unmarshalls it. JWK, JWT and claims fields are all filled
 func (popToken *PopToken) Unmarshal(token string) error {
 	popToken.HeaderClaims = make(map[string]string)
 	popToken.PayloadClaims = make(map[string]string)
@@ -357,13 +402,16 @@ func (popToken *PopToken) Unmarshal(token string) error {
 	// Starting with header
 	var headerMap map[string]json.RawMessage
 	err := json.Unmarshal([]byte(popToken.Jwt.Header), &headerMap)
+	if err != nil {
+		return err
+	}
 	for key, value := range headerMap {
 		popToken.HeaderClaims[key] = string(value[1 : len(value)-1])
 	}
 	popToken.HeaderClaims["jwk"] = string(headerMap["jwk"]) // Key must be unmarshalled
 	// Then we decode the key
 	if err := popToken.Jwk.Unmarshall(popToken.HeaderClaims["jwk"]); err != nil {
-		return errors.New("Can not decode key in POPToken")
+		return errors.New("can not decode key in poptoken")
 	}
 	// Continue with payload
 	var payloadMap map[string]json.RawMessage
@@ -426,9 +474,13 @@ func (popToken PopToken) GenerateToken(privKey crypto.PrivateKey) (token string,
 	// New payload claims: iat + jti
 	iat := int((time.Now().Unix()))
 	popToken.PayloadClaims["iat"] = strconv.Itoa(iat)
-	popToken.PayloadClaims["exp"] = strconv.Itoa(iat + 30)
-	md5Hash := md5.Sum([]byte(popToken.Jwk.Thumb + strconv.Itoa(iat)))
-	popToken.PayloadClaims["jti"] = string(base64.RawURLEncoding.EncodeToString(md5Hash[:]))
+	//No need to use exp, servers will check iat + jti to check the validity
+	//popToken.PayloadClaims["exp"] = strconv.Itoa(iat + 30)
+	unparsedId, err := uuid.NewRandom()
+	if err != nil { // Better way to generate uuid than calling an ext program
+		return
+	}
+	popToken.PayloadClaims["jti"] = unparsedId.String()
 	// Marshal header (must be in order)
 	iterator := []string{"typ", "alg", "jwk"}
 	for _, iter := range iterator {
@@ -450,8 +502,7 @@ func (popToken PopToken) GenerateToken(privKey crypto.PrivateKey) (token string,
 }
 
 func (popToken PopToken) GetPubRsa() (*rsa.PublicKey, error) {
-	var pubKey *rsa.PublicKey
-	pubKey = new(rsa.PublicKey)
+	pubKey := new(rsa.PublicKey)
 	// Decode n and e
 	byteN, err := base64.RawURLEncoding.DecodeString(popToken.Jwk.PubMod)
 	if err != nil {
@@ -471,8 +522,7 @@ func (popToken PopToken) GetPubRsa() (*rsa.PublicKey, error) {
 }
 
 func (popToken PopToken) GetPubEcdsa() (*ecdsa.PublicKey, error) {
-	var pubKey *ecdsa.PublicKey
-	pubKey = new(ecdsa.PublicKey)
+	pubKey := new(ecdsa.PublicKey)
 	// Curve. Only P-256 is supported at the moment
 	switch popToken.Jwk.Curve {
 	case "P-256":
@@ -497,11 +547,18 @@ func (popToken PopToken) GetPubEcdsa() (*ecdsa.PublicKey, error) {
 }
 
 // Validates keys: same alg, same thumprint...
-func (popToken PopToken) ValidateKeyContent(thumprint string) (bool, string) {
-	if thumprint != "" && thumprint != popToken.Jwk.Thumb {
-		return false, "Invalid Thumbprint"
+func (popToken PopToken) CheckThumb(thumprint string) (bool, string) {
+	if thumprint == "" || thumprint != popToken.Jwk.Thumb {
+		return false, "Invalid Thumbprint: " + popToken.Jwk.Thumb
 	}
 	return true, "ok"
+}
+
+func (popToken *PopToken) CheckAud(aud string) (bool, string) {
+	if valid := popToken.PayloadClaims["aud"] == aud; !valid {
+		return false, "Aud not valid"
+	}
+	return true, ""
 }
 
 // Checks signature, checks that alg used to sign is the same as in key (to avoid exploits)
@@ -537,37 +594,37 @@ func (popToken PopToken) CheckExp() (bool, string) {
 	return true, "OK"
 }
 
-// Check iats. -1 for default
-func (popToken PopToken) CheckIat(ttl int) (bool, string) {
-	if ttl == -1 {
-		ttl = 100
-	}
+// Check iats. Gap is the possible error between clocks. lifetime is the maximum time after is creation that the token can be used
+func (popToken PopToken) CheckIat(gap int, lifetime int) (bool, string) {
 	act := int(time.Now().Unix())
 	iat, err := strconv.Atoi(popToken.PayloadClaims["iat"])
 	if err != nil {
-		return false, "No iat claim"
+		return false, "Bad iat claim"
 	}
-	if iat+ttl < act || iat-ttl > act { // 30 seconds margin for clock problems and trip
+	if !(act < iat+gap+lifetime) {
 		return false, "Expired"
+	}
+	if !(act > iat-gap) { // Check if token is still valid
+		return false, "Created in future time"
 	}
 	return true, "OK"
 }
 
 // Returns a bool that tells if the pop token is valid.
-func (popToken *PopToken) Validate(thumbprint, aud string) (valid bool, info string) {
+func (popToken *PopToken) Validate(thumbprint, aud string, gap, lifetime int) (valid bool, info string) {
 	// Validates time
-	if valid, info = popToken.CheckIat(-1); !valid {
+	if valid, info = popToken.CheckIat(gap, lifetime); !valid {
 		return
 	}
-	if valid, info = popToken.CheckExp(); !valid {
-		return
-	}
+	//if valid, info = popToken.CheckExp(); !valid {
+	//	return
+	//}
 	// Makes sure to exist claim "aud"
-	if valid = popToken.PayloadClaims["aud"] == aud; !valid {
-		return false, "Aud not valid"
+	if valid, info = popToken.CheckAud(aud); !valid {
+		return
 	}
 	// Checks key
-	if valid, info = popToken.ValidateKeyContent(thumbprint); !valid {
+	if valid, info = popToken.CheckThumb(thumbprint); !valid {
 		return
 	}
 	// Checks signature

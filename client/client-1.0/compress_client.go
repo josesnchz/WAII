@@ -25,7 +25,7 @@ import (
 
 	"github.com/akamensky/argparse"
 	"github.com/gorilla/websocket"
-	"github.com/MEAE-GOT/WAII/utils"
+	"github.com/josesnchz/WAII/utils"
 )
 
 var commandNumber string
