@@ -2,7 +2,7 @@
 * (C) 2019 Geotab Inc
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/MEAE-GOT/WAII
+* All files and artifacts in the repository at https://github.com/josesnchz/WAII
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -230,12 +230,12 @@ func frontendWSAppSession(conn *websocket.Conn, clientChannel chan string, clien
 		}
 
 		var payload string
-		if (compression == PROPRIETARY) {
-		    payload = string(DecompressMessage(msg))
-		} else if (compression == PB_LEVEL1 || compression == PB_LEVEL2) {
-		    payload = ProtobufToJson(msg, compression)
+		if compression == PROPRIETARY {
+			payload = string(DecompressMessage(msg))
+		} else if compression == PB_LEVEL1 || compression == PB_LEVEL2 {
+			payload = ProtobufToJson(msg, compression)
 		} else {
-		    payload = string(msg)
+			payload = string(msg)
 		}
 		Info.Printf("%s request: %s, len=%d", conn.RemoteAddr(), payload, len(payload))
 		Info.Printf("Compression variant=%d", compression)
@@ -255,19 +255,19 @@ func backendWSAppSession(conn *websocket.Conn, clientBackendChannel chan string,
 		Info.Printf("backendWSAppSession(): Message received=%s", message)
 		// Write message back to app client
 		var response []byte
-	        var messageType int
+		var messageType int
 
-		if (compression == PROPRIETARY) {
-		    response = CompressMessage([]byte(message))
-		    messageType = websocket.BinaryMessage
-		} else if (compression == PB_LEVEL1 || compression == PB_LEVEL2) {
-		    response = []byte(JsonToProtobuf(message, compression))
-		    messageType = websocket.BinaryMessage
+		if compression == PROPRIETARY {
+			response = CompressMessage([]byte(message))
+			messageType = websocket.BinaryMessage
+		} else if compression == PB_LEVEL1 || compression == PB_LEVEL2 {
+			response = []byte(JsonToProtobuf(message, compression))
+			messageType = websocket.BinaryMessage
 		} else {
-		    response = []byte(message)
-		    messageType = websocket.TextMessage
-               }
-	        err := conn.WriteMessage(messageType, response)
+			response = []byte(message)
+			messageType = websocket.TextMessage
+		}
+		err := conn.WriteMessage(messageType, response)
 		if err != nil {
 			Error.Print("App client write error:", err)
 			break
@@ -295,38 +295,38 @@ func (wsH WsChannel) makeappClientHandler(appClientChannel []chan string) func(h
 			compression = NONE
 			h := http.Header{}
 			for _, sub := range websocket.Subprotocols(req) {
-			   if sub == "VISSv2" {
-			      compression = NONE
-			      h.Set("Sec-Websocket-Protocol", sub)
-			      break
-			   }
-			   if sub == "VISSv2prop" {
-			      if (InitCompression("../vsspathlist.json") == true) {
-			          compression = PROPRIETARY
-			          h.Set("Sec-Websocket-Protocol", sub)
-			      } else {
-			          Error.Printf("Cannot find vsspathlist.json.")
-			          compression = NONE // revert back to no compression
-			          h.Set("Sec-Websocket-Protocol", "VISSv2")
-			      }
-			      break
-			   }
-			   if sub == "VISSv2pbl1" {
-			      compression = PB_LEVEL1
-			      h.Set("Sec-Websocket-Protocol", sub)
-			      break
-			   }
-			   if sub == "VISSv2pbl2" {
-			      if (InitCompression("../vsspathlist.json") == true) {
-			          compression = PB_LEVEL2
-			          h.Set("Sec-Websocket-Protocol", sub)
-			      } else {
-			          Error.Printf("Cannot find vsspathlist.json.")
-			          compression = PB_LEVEL1 // revert back to level 1
-			          h.Set("Sec-Websocket-Protocol", "VISSv2pbl1")
-			      }
-			      break
-			   }
+				if sub == "VISSv2" {
+					compression = NONE
+					h.Set("Sec-Websocket-Protocol", sub)
+					break
+				}
+				if sub == "VISSv2prop" {
+					if InitCompression("../vsspathlist.json") == true {
+						compression = PROPRIETARY
+						h.Set("Sec-Websocket-Protocol", sub)
+					} else {
+						Error.Printf("Cannot find vsspathlist.json.")
+						compression = NONE // revert back to no compression
+						h.Set("Sec-Websocket-Protocol", "VISSv2")
+					}
+					break
+				}
+				if sub == "VISSv2pbl1" {
+					compression = PB_LEVEL1
+					h.Set("Sec-Websocket-Protocol", sub)
+					break
+				}
+				if sub == "VISSv2pbl2" {
+					if InitCompression("../vsspathlist.json") == true {
+						compression = PB_LEVEL2
+						h.Set("Sec-Websocket-Protocol", sub)
+					} else {
+						Error.Printf("Cannot find vsspathlist.json.")
+						compression = PB_LEVEL1 // revert back to level 1
+						h.Set("Sec-Websocket-Protocol", "VISSv2pbl1")
+					}
+					break
+				}
 			}
 			conn, err := Upgrader.Upgrade(w, req, h)
 			if err != nil {

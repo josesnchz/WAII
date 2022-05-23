@@ -3,7 +3,7 @@
 * (C) 2019 Geotab Inc
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/MEAE-GOT/WAII
+* All files and artifacts in the repository at https://github.com/josesnchz/WAII
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -25,8 +25,8 @@ import (
 	//	"sync"
 	"time"
 
-	"github.com/MEAE-GOT/WAII/utils"
 	"github.com/akamensky/argparse"
+	"github.com/josesnchz/WAII/utils"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -818,7 +818,7 @@ func getDataPack(pathArray []string, filterList []utils.FilterObject) string {
 				utils.Info.Printf("Historic data request, period=%s", period)
 				getHistory = true
 				break
-			} else if (filterList[i].Type == "dynamic-metadata") {
+			} else if filterList[i].Type == "dynamic-metadata" {
 				domain = filterList[i].Value
 				utils.Info.Printf("Dynamic metadata request, domain=%s", domain)
 				getDomain = true
@@ -836,7 +836,7 @@ func getDataPack(pathArray []string, filterList []utils.FilterObject) string {
 			if len(dataPoint) == 0 {
 				return ""
 			}
-		} else if (getDomain == true) {
+		} else if getDomain == true {
 			dataPoint = getMetadataDomainDp(domain, pathArray[i])
 		} else {
 			dataPoint = getVehicleData(pathArray[i])
@@ -887,26 +887,30 @@ func getVssPathList(host string, port int, path string) []byte {
 }
 
 func getMetadataDomainDp(domain string, path string) string {
-    value := ""
-    switch domain {
-        case "samplerate": value = getSampleRate(path)
-        case "availability": value = getAvailability(path)
-        case "validate": value = getValidation(path)
-        default: value = "Unknown domain"
-    } 
-    return `{"value":"` + value + `","ts":"` + utils.GetRfcTime() + `"}`
+	value := ""
+	switch domain {
+	case "samplerate":
+		value = getSampleRate(path)
+	case "availability":
+		value = getAvailability(path)
+	case "validate":
+		value = getValidation(path)
+	default:
+		value = "Unknown domain"
+	}
+	return `{"value":"` + value + `","ts":"` + utils.GetRfcTime() + `"}`
 }
 
 func getSampleRate(path string) string {
-    return "X Hz"  //dummy return
+	return "X Hz" //dummy return
 }
 
 func getAvailability(path string) string {
-    return "available"  //dummy return
+	return "available" //dummy return
 }
 
 func getValidation(path string) string {
-    return "read-write"  //dummy return
+	return "read-write" //dummy return
 }
 
 func main() {
@@ -1012,11 +1016,11 @@ func main() {
 						dataChan <- utils.FinalizeMessage(errorResponseMap)
 						break
 					}
-					if (filterList[0].Type == "dynamic-metadata" && filterList[0].Value == "server_capabilities") {
-				    	    metadataPack := `{"filter":["paths","timebased","change","range","curvelog","history","dynamic-metadata","static-metadata"],"access_ctrl":["short_term","long_term","signalset_claim"],"transport_protocol":["https","wss","mqtts"]}`
-				    	    dataChan <- addPackage(utils.FinalizeMessage(responseMap), "metadata", metadataPack)
-				    	    break
-				        }
+					if filterList[0].Type == "dynamic-metadata" && filterList[0].Value == "server_capabilities" {
+						metadataPack := `{"filter":["paths","timebased","change","range","curvelog","history","dynamic-metadata","static-metadata"],"access_ctrl":["short_term","long_term","signalset_claim"],"transport_protocol":["https","wss","mqtts"]}`
+						dataChan <- addPackage(utils.FinalizeMessage(responseMap), "metadata", metadataPack)
+						break
+					}
 				}
 				dataPack := getDataPack(pathArray, filterList)
 				if len(dataPack) == 0 {
@@ -1058,7 +1062,7 @@ func main() {
 							dataChan <- utils.FinalizeMessage(responseMap)
 							break
 						}
-					requestMap["subscriptionId"] = subscriptId
+						requestMap["subscriptionId"] = subscriptId
 					}
 				}
 				utils.SetErrorResponse(requestMap, errorResponseMap, "400", "Unsubscribe failed.", "Incorrect or missing subscription id.")

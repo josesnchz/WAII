@@ -2,7 +2,7 @@
 * (C) 2019 Geotab Inc
 * (C) 2019 Volvo Cars
 *
-* All files and artifacts in the repository at https://github.com/MEAE-GOT/WAII
+* All files and artifacts in the repository at https://github.com/josesnchz/WAII
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
@@ -17,31 +17,32 @@ import (
 
 var requestTag int
 
-var trSecConfigPath string = "../transport_sec/"  // relative path to the directory containing the transportSec.json file
+var trSecConfigPath string = "../transport_sec/" // relative path to the directory containing the transportSec.json file
 type SecConfig struct {
-    TransportSec string  `json:"transportSec"`// "yes" or "no"
-    SecPort string       `json:"secPort"`// port number
-    CaSecPath string     `json:"caSecPath"`// relative path from the directory containing the transportSec.json file
-    ServerSecPath string `json:"serverSecPath"`// relative path from the directory containing the transportSec.json file
-    ServerCertOpt string `json:"serverCertOpt"`// one of  "NoClientCert"/"ClientCertNoVerification"/"ClientCertVerification"
-    ClientSecPath string `json:"clientSecPath"`// relative path from the directory containing the transportSec.json file
+	TransportSec  string `json:"transportSec"`  // "yes" or "no"
+	SecPort       string `json:"secPort"`       // port number
+	CaSecPath     string `json:"caSecPath"`     // relative path from the directory containing the transportSec.json file
+	ServerSecPath string `json:"serverSecPath"` // relative path from the directory containing the transportSec.json file
+	ServerCertOpt string `json:"serverCertOpt"` // one of  "NoClientCert"/"ClientCertNoVerification"/"ClientCertVerification"
+	ClientSecPath string `json:"clientSecPath"` // relative path from the directory containing the transportSec.json file
 }
+
 var secConfig SecConfig
 
 type Compression int
 
 const (
-	NONE Compression = 0
-	PROPRIETARY      = 1
-	PB_LEVEL1        = 2  // path has string format, e. g. "Vehicle.Acceleration.Longitudinal"
-	PB_LEVEL2        = 3  // path is represented by integer index, retrieved from vsspathlist.json
+	NONE        Compression = 0
+	PROPRIETARY             = 1
+	PB_LEVEL1               = 2 // path has string format, e. g. "Vehicle.Acceleration.Longitudinal"
+	PB_LEVEL2               = 3 // path is represented by integer index, retrieved from vsspathlist.json
 )
 
 var MuxServer = []*http.ServeMux{
 	http.NewServeMux(), // for app client HTTP sessions
 	http.NewServeMux(), // for data session with core server on port number provided at registration
 	http.NewServeMux(), // for history control HTTP sessions
-//	http.NewServeMux(), // for X transport sessions
+	//	http.NewServeMux(), // for X transport sessions
 }
 
 // the number of channel array elements sets the limit for max number of parallel WS app clients

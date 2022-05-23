@@ -1,7 +1,7 @@
 /**
 * (C) 2020 Geotab Inc
 *
-* All files and artifacts in the repository at https://github.com/MEAE-GOT/WAII
+* All files and artifacts in the repository at https://github.com/josesnchz/WAII
 * are licensed under the provisions of the license provided by the LICENSE file in this repository.
 *
 **/
